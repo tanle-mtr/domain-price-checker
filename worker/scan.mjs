@@ -1,4 +1,3 @@
-import { Resolver } from 'node:dns/promises';
 import {
   readFileSync,
   writeFileSync,
@@ -22,15 +21,20 @@ const TLD = process.env.SCAN_TLD || 'xyz';
 const TOTAL = Number(process.env.SCAN_TOTAL || 1000000);
 const START = Number(process.env.SCAN_START || 0);
 const CONCURRENCY = Number(process.env.SCAN_CONCURRENCY || 150);
-const COMMIT_EVERY = Number(process.env.COMMIT_EVERY || 50000);
+const COMMIT_EVERY = Number(process.env.COMMIT_EVERY || 100000);
 const DO_COMMIT = process.env.COMMIT === '1';
 const FRESH_MS = 24 * 3600 * 1000;
-const DNS_TIMEOUT_MS = 2500;
+const DNS_TIMEOUT_MS = 1500;
 const RDAP_TIMEOUT_MS = 4000;
 const RANGE = 100000;
 
-const resolver = new Resolver();
-resolver.setServers(['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9']);
+let dohIndex = 0;
+const DOH_PROVIDERS = [
+  (name) =>
+    `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=NS`,
+  (name) =>
+    `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=NS`,
+];
 
 let totalAvailable = 0;
 let totalRegistered = 0;
@@ -99,24 +103,25 @@ function commit(msg) {
 }
 
 async function dnsCheck(name) {
+  const url = DOH_PROVIDERS[dohIndex++ % DOH_PROVIDERS.length](name);
   try {
-    const recs = await Promise.race([
-      resolver.resolveNs(name),
-      new Promise((_, rej) =>
-        setTimeout(() => rej(new Error('dns timeout')), DNS_TIMEOUT_MS)
-      ),
-    ]);
-    return recs.length > 0 ? 'registered' : 'available';
-  } catch (e) {
-    const c = e && e.code;
-    if (
-      c === 'ENOTFOUND' ||
-      c === 'ENODATA' ||
-      c === 'ENOTEMPTY' ||
-      c === 'NXDOMAIN'
-    ) {
-      return 'available';
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), DNS_TIMEOUT_MS);
+    let data;
+    try {
+      const res = await fetch(url, {
+        headers: { accept: 'application/dns-json' },
+        signal: ac.signal,
+      });
+      if (!res.ok) return 'error';
+      data = await res.json();
+    } finally {
+      clearTimeout(t);
     }
+    if (data.Status === 0) return 'registered';
+    if (data.Status === 3) return 'available';
+    return 'error';
+  } catch {
     return 'error';
   }
 }
