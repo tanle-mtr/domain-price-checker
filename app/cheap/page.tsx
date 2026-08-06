@@ -15,6 +15,18 @@ interface Counts {
   unknown: number;
 }
 
+interface CloudProgress {
+  tld: string;
+  next: number;
+  total: number;
+  completed: boolean;
+  updatedAt: number;
+  counts: Counts;
+}
+
+const CLOUD_BASE =
+  'https://raw.githubusercontent.com/tanle-mtr/domain-price-checker/main/data';
+
 const DOH_PROVIDERS: ((name: string) => string)[] = [
   (name) =>
     `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=NS`,
@@ -69,6 +81,21 @@ export default function CheapDomainsPage() {
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<Mode>('server');
   const [message, setMessage] = useState<string | null>(null);
+  const [cloud, setCloud] = useState<{
+    progress: CloudProgress | null;
+    list: string[];
+    loadingProgress: boolean;
+    loadingList: boolean;
+    error: string | null;
+    search: string;
+  }>({
+    progress: null,
+    list: [],
+    loadingProgress: false,
+    loadingList: false,
+    error: null,
+    search: '',
+  });
 
   const runningRef = useRef(false);
   const availRef = useRef<string[]>([]);
@@ -288,6 +315,68 @@ export default function CheapDomainsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const loadCloudProgress = useCallback(async () => {
+    setCloud((c) => ({ ...c, loadingProgress: true, error: null }));
+    try {
+      const res = await fetch(`${CLOUD_BASE}/scan-progress.json?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const progress = await res.json();
+      setCloud((c) => ({ ...c, progress, loadingProgress: false }));
+    } catch (e) {
+      setCloud((c) => ({
+        ...c,
+        loadingProgress: false,
+        error: e instanceof Error ? e.message : String(e),
+      }));
+    }
+  }, []);
+
+  const loadCloudList = useCallback(async () => {
+    if (!cloud.progress) return;
+    setCloud((c) => ({ ...c, loadingList: true, error: null }));
+    try {
+      const urls = Array.from({ length: 10 }, (_, i) => {
+        const from = String(i * 100000).padStart(6, '0');
+        const to = String(Math.min((i + 1) * 100000, 1000000) - 1).padStart(6, '0');
+        return `${CLOUD_BASE}/available/xyz-${from}-${to}.txt?t=${Date.now()}`;
+      });
+      const texts = await Promise.all(
+        urls.map(async (u) => {
+          const r = await fetch(u, { cache: 'no-store' });
+          return r.ok ? r.text() : '';
+        })
+      );
+      const all = texts.flatMap((t) => (t ? t.split('\n').filter(Boolean) : []));
+      setCloud((c) => ({ ...c, list: all, loadingList: false }));
+    } catch (e) {
+      setCloud((c) => ({
+        ...c,
+        loadingList: false,
+        error: e instanceof Error ? e.message : String(e),
+      }));
+    }
+  }, [cloud.progress]);
+
+  const exportCloud = () => {
+    const filtered = cloud.search
+      ? cloud.list.filter((d) => d.includes(cloud.search))
+      : cloud.list;
+    if (filtered.length === 0) return;
+    const blob = new Blob([filtered.join('\n')], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = cloud.search
+      ? `xyz-available-${cloud.search}.txt`
+      : 'xyz-available-domains.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const total = end - start + 1;
   const scanned = Math.min(Math.max(current - start, 0), total);
   const percent = total > 0 ? Math.min((scanned / total) * 100, 100) : 0;
@@ -298,6 +387,10 @@ export default function CheapDomainsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    loadCloudProgress();
+  }, [loadCloudProgress]);
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
       <header className="mb-8">
@@ -306,6 +399,119 @@ export default function CheapDomainsPage() {
           批量扫描 6 位数字 .xyz 域名（000000–999999，共 100 万个），筛选未注册域名并导出 TXT
         </p>
       </header>
+
+      <div className="mb-8 rounded-xl border border-emerald-800/60 bg-emerald-950/30 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-emerald-200">
+              云端后台扫描（GitHub Actions Worker）
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              服务器全天候自动扫描 000000–999999 的 .xyz 域名，结果已备好，打开即用、无需等待
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={loadCloudProgress}
+              disabled={cloud.loadingProgress}
+              className="rounded-lg border border-emerald-700 px-4 py-2 text-sm text-emerald-300 hover:border-emerald-500 disabled:opacity-50"
+            >
+              {cloud.loadingProgress ? '刷新中…' : '刷新状态'}
+            </button>
+            <button
+              onClick={loadCloudList}
+              disabled={cloud.loadingList || !cloud.progress}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {cloud.loadingList ? '加载中…' : '加载未注册列表'}
+            </button>
+          </div>
+        </div>
+
+        {cloud.progress && (
+          <div className="mt-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-400">
+              <span>
+                已扫描 {cloud.progress.next.toLocaleString()} /{' '}
+                {cloud.progress.total.toLocaleString()} (
+                {Math.min((cloud.progress.next / cloud.progress.total) * 100, 100).toFixed(2)}
+                %)
+              </span>
+              <span>
+                {cloud.progress.completed
+                  ? `已完成 · 更新于 ${new Date(cloud.progress.updatedAt).toLocaleString()}`
+                  : `扫描中 · 更新于 ${new Date(cloud.progress.updatedAt).toLocaleString()}`}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full bg-emerald-500 transition-all"
+                style={{
+                  width: `${Math.min((cloud.progress.next / cloud.progress.total) * 100, 100)}%`,
+                }}
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-4 text-sm">
+              <span className="text-emerald-300">
+                未注册：{cloud.progress.counts.available.toLocaleString()}
+              </span>
+              <span className="text-slate-400">
+                已注册：{cloud.progress.counts.registered.toLocaleString()}
+              </span>
+              <span className="text-amber-300">
+                未知：{cloud.progress.counts.unknown.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {cloud.error && (
+          <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+            云端数据获取失败：{cloud.error}（worker 可能尚未启动或首次构建中，可稍后刷新）
+          </p>
+        )}
+
+        {cloud.list.length > 0 && (
+          <div className="mt-5 border-t border-emerald-900/60 pt-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm text-slate-300">
+                已加载{' '}
+                <span className="font-semibold text-emerald-300">
+                  {cloud.list.length.toLocaleString()}
+                </span>{' '}
+                个未注册域名
+              </span>
+              <input
+                value={cloud.search}
+                onChange={(e) => setCloud((c) => ({ ...c, search: e.target.value }))}
+                placeholder="搜索（如 888 或 123）"
+                className="w-44 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500"
+              />
+              <button
+                onClick={exportCloud}
+                disabled={cloud.list.length === 0}
+                className="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
+              >
+                导出
+                {cloud.search
+                  ? `筛选(${cloud.list.filter((d) => d.includes(cloud.search)).length})`
+                  : '全部'}{' '}
+                TXT
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-1 text-sm sm:grid-cols-4 md:grid-cols-6">
+              {cloud.list
+                .filter((d) => (cloud.search ? d.includes(cloud.search) : true))
+                .slice(0, 60)
+                .map((d) => (
+                  <span key={d} className="text-emerald-300">
+                    {d}
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
         <div className="mb-4 flex items-center gap-2 text-sm">

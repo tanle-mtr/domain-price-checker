@@ -1,0 +1,25 @@
+name: xyz domain scanner
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: xyz-scanner
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run scanner
+        run: node worker/scan.mjs
+        env:
+          COMMIT: '1'
+          SCAN_CONCURRENCY: '150'
