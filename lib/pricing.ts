@@ -8,6 +8,8 @@ export interface RegistrarPrice {
   whoisProtection: number;
   /** 是否支持中国注册 */
   cn?: boolean;
+  /** 不售卖的后缀（如厂商暂停某些 TLD） */
+  excludeTlds?: string[];
   /** 首页 URL */
   homepage: string;
   /** 结算页 URL 模板，{domain} 会被替换 */
@@ -74,7 +76,7 @@ export const REGISTRARS: RegistrarPrice[] = [
     whoisProtection: 0,
     cn: true,
     homepage: ZH,
-    checkoutTemplate: `${ZH}/domain/searchresult?keywords={domain}&sale=seo`,
+    checkoutTemplate: "https://wanwang.aliyun.com/domain/searchresult/?keyword={domain}",
   },
   {
     registrar: "腾讯云",
@@ -82,6 +84,7 @@ export const REGISTRARS: RegistrarPrice[] = [
     renewal: 12.0,
     whoisProtection: 0,
     cn: true,
+    excludeTlds: ["co"],
     homepage: "https://cloud.tencent.com/product/domain",
     checkoutTemplate: "https://buy.cloud.tencent.com/domain?domain={domain}",
   },
@@ -92,7 +95,7 @@ export const REGISTRARS: RegistrarPrice[] = [
     whoisProtection: 0.7,
     cn: true,
     homepage: "https://www.west.cn",
-    checkoutTemplate: "https://www.west.cn/web/domain/order?domain={domain}",
+    checkoutTemplate: "https://www.west.cn/services/domain/",
   },
 ];
 
@@ -131,6 +134,7 @@ export function checkoutUrl(
 
 export function cheapestFirstYear(tld: string): RegistrarPrice | null {
   const candidates = REGISTRARS.filter((r) => {
+    if (r.excludeTlds?.includes(tld)) return false;
     if (r.cn) return true;
     return !["cn", "com.cn", "net.cn", "org.cn"].includes(tld);
   });

@@ -65,6 +65,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                   </thead>
                   <tbody>
                     {REGISTRARS.map((reg) => {
+                      if (reg.excludeTlds?.includes(r.tld)) return null;
                       const cheapest =
                         cheapestFirstYear(r.tld)?.registrar === reg.registrar;
                       return (
