@@ -14,11 +14,15 @@ on:
         type: number
         default: 100000
       scan_concurrency:
-        description: 'Concurrent DNS checks (default 150)'
+        description: 'Concurrent DNS checks (default 100)'
         type: number
-        default: 150
+        default: 100
       scan_debug:
         description: 'Enable debug logging (1/0)'
+        type: string
+        default: '0'
+      force_rescan:
+        description: 'Force incremental rescan, ignore 24h freshness (1/0)'
         type: string
         default: '0'
 
@@ -46,3 +50,4 @@ jobs:
           COMMIT_EVERY: ${{ inputs.commit_every }}
           SCAN_CONCURRENCY: ${{ inputs.scan_concurrency }}
           SCAN_DEBUG: ${{ inputs.scan_debug }}
+          SCAN_FORCE: ${{ inputs.force_rescan }}

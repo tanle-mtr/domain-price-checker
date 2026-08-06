@@ -30,15 +30,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = process.env.GITHUB_WORKSPACE || path.resolve(__dirname, '..');
 const DATA = path.join(REPO, 'data');
 const AVAIL_DIR = path.join(DATA, 'available');
+const REG_DIR = path.join(DATA, 'registered');
 const PROGRESS_FILE = path.join(DATA, 'scan-progress.json');
 
 const TLD = process.env.SCAN_TLD || 'xyz';
 const TOTAL = Number(process.env.SCAN_TOTAL || 1000000);
 const START = Number(process.env.SCAN_START || 0);
-const CONCURRENCY = Number(process.env.SCAN_CONCURRENCY || 150);
+const CONCURRENCY = Number(process.env.SCAN_CONCURRENCY || 100);
 const COMMIT_EVERY = Number(process.env.COMMIT_EVERY || 100000);
 const DO_COMMIT = process.env.COMMIT === '1';
 const DEBUG = process.env.SCAN_DEBUG === '1';
+const FORCE = process.env.SCAN_FORCE === '1';
 const FRESH_MS = 24 * 3600 * 1000;
 const DNS_TIMEOUT_MS = 1500;
 const RDAP_TIMEOUT_MS = 4000;
@@ -55,8 +57,12 @@ const DOH_PROVIDERS = [
 let totalAvailable = 0;
 let totalRegistered = 0;
 let totalUnknown = 0;
+let skippedRegistered = 0;
+let queriedCount = 0;
 const availByRange = new Map();
+const registeredByRange = new Map();
 const dirtyRanges = new Set();
+const dirtyRegisteredRanges = new Set();
 let debugCount = 0;
 
 function loadJson(file, fallback) {
@@ -77,14 +83,59 @@ function rangeFile(ri) {
   return path.join(AVAIL_DIR, `${TLD}-${from}-${to}.txt`);
 }
 
+function registeredFile(ri) {
+  const from = String(ri * RANGE).padStart(6, '0');
+  const to = String(Math.min((ri + 1) * RANGE, TOTAL) - 1).padStart(6, '0');
+  return path.join(REG_DIR, `${TLD}-${from}-${to}.txt`);
+}
+
+function loadNumSet(file) {
+  if (!existsSync(file)) return new Set();
+  return new Set(
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => parseInt(line.split('.')[0], 10))
+      .filter((n) => Number.isInteger(n))
+  );
+}
+
 function loadRange(ri) {
-  const f = rangeFile(ri);
-  if (!existsSync(f)) return [];
-  return readFileSync(f, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => parseInt(line.split('.')[0], 10))
-    .filter((n) => Number.isInteger(n));
+  return loadNumSet(rangeFile(ri));
+}
+
+function loadRegisteredRange(ri) {
+  return loadNumSet(registeredFile(ri));
+}
+
+function isRegisteredIn(n) {
+  const set = registeredByRange.get(rangeIndex(n));
+  return !!set && set.has(n);
+}
+
+function addRegistered(n) {
+  const ri = rangeIndex(n);
+  let set = registeredByRange.get(ri);
+  if (!set) {
+    set = new Set(loadRegisteredRange(ri));
+    registeredByRange.set(ri, set);
+  }
+  set.add(n);
+  dirtyRegisteredRanges.add(ri);
+}
+
+function preloadRegistered() {
+  let loaded = 0;
+  for (let ri = 0; ri < Math.ceil(TOTAL / RANGE); ri++) {
+    const set = loadRegisteredRange(ri);
+    if (set.size) {
+      registeredByRange.set(ri, set);
+      loaded += set.size;
+    }
+  }
+  if (loaded) {
+    console.log(`[scan] preloaded registered index: ${loaded.toLocaleString()} domains (will skip them)`);
+  }
 }
 
 function save(prog) {
@@ -100,6 +151,51 @@ function save(prog) {
     renameSync(`${f}.tmp`, f);
   }
   dirtyRanges.clear();
+  for (const ri of dirtyRegisteredRanges) {
+    const nums = [...(registeredByRange.get(ri) || [])].sort((a, b) => a - b);
+    const lines =
+      nums.map((n) => `${String(n).padStart(6, '0')}.${TLD}`).join('\n') +
+      (nums.length ? '\n' : '');
+    const f = registeredFile(ri);
+    writeFileSync(`${f}.tmp`, lines);
+    renameSync(`${f}.tmp`, f);
+  }
+  dirtyRegisteredRanges.clear();
+}
+
+function cleanupHistory() {
+  if (!DO_COMMIT) return;
+  let base;
+  try {
+    base = execSync(`git rev-list -1 HEAD -- ':(exclude)data'`, {
+      cwd: REPO,
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n')[0];
+  } catch {
+    console.error('[scan] cleanup: base lookup failed, keep history as-is');
+    return;
+  }
+  if (!base) {
+    console.log('[scan] cleanup: no base commit found, skip');
+    return;
+  }
+  try {
+    console.log(`[scan] squash data commits onto ${base.slice(0, 8)}`);
+    execSync(`git reset --soft ${base}`, { cwd: REPO, stdio: 'inherit' });
+    execSync(
+      `git -c user.name="domain-scanner[bot]" -c user.email="scanner[bot]@users.noreply.github.com" commit -m "scan data snapshot"`,
+      { cwd: REPO, stdio: 'inherit' }
+    );
+    execSync(
+      `git push --force-with-lease origin HEAD:${process.env.GITHUB_REF_NAME || 'main'}`,
+      { cwd: REPO, stdio: 'inherit', timeout: 120000 }
+    );
+    console.log('[scan] history cleaned: all data folded into one snapshot commit');
+  } catch (e) {
+    console.error(`[scan] cleanup skipped (non-fatal): ${e.message}`);
+  }
 }
 
 function commit(msg) {
@@ -186,6 +282,18 @@ async function checkOne(n) {
   return rdapCheck(full);
 }
 
+async function withTimeout(p, ms) {
+  let timer;
+  const guard = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`task timeout ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([p, guard]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function makeProgress(next, completed) {
   return {
     tld: TLD,
@@ -207,19 +315,22 @@ let globalStartedAt = Date.now();
 
 async function main() {
   mkdirSync(AVAIL_DIR, { recursive: true });
-  console.log(`[scan] env: TOTAL=${TOTAL} START=${START} CONCURRENCY=${CONCURRENCY} COMMIT_EVERY=${COMMIT_EVERY} DO_COMMIT=${DO_COMMIT} DEBUG=${DEBUG}`);
+  mkdirSync(REG_DIR, { recursive: true });
+  console.log(`[scan] env: TOTAL=${TOTAL} START=${START} CONCURRENCY=${CONCURRENCY} COMMIT_EVERY=${COMMIT_EVERY} DO_COMMIT=${DO_COMMIT} DEBUG=${DEBUG} FORCE=${FORCE}`);
   const prog = loadJson(PROGRESS_FILE, null);
   let next = prog && typeof prog.next === 'number' ? prog.next : START;
 
+  preloadRegistered();
+
   if (prog && prog.completed && (prog.total || TOTAL) >= TOTAL) {
     const age = Date.now() - (prog.completedAt || 0);
-    if (age < FRESH_MS) {
+    if (!FORCE && age < FRESH_MS) {
       console.log(
         `[scan] completed ${Math.round(age / 3600000)}h ago, still fresh (next cycle after 24h)`
       );
       return;
     }
-    console.log('[scan] completed >24h ago, restarting full cycle');
+    console.log('[scan] incremental cycle: re-check available + unknown, skip registered');
     for (const f of readdirSync(AVAIL_DIR)) {
       unlinkSync(path.join(AVAIL_DIR, f));
     }
@@ -247,21 +358,34 @@ async function main() {
   while (next < TOTAL) {
     const batch = Math.min(2000, TOTAL - next);
     const tasks = [];
-    for (let i = 0; i < batch; i++) tasks.push(next + i);
-    const results = new Array(batch);
+    for (let i = 0; i < batch; i++) {
+      const n = next + i;
+      if (isRegisteredIn(n)) {
+        totalRegistered++;
+        skippedRegistered++;
+        continue;
+      }
+      tasks.push(n);
+    }
+    queriedCount += tasks.length;
+    const results = new Map();
     let idx = 0;
     await Promise.all(
       Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, async () => {
         while (idx < tasks.length) {
           const n = tasks[idx++];
-          results[n - next] = await checkOne(n);
+          results.set(
+            n,
+            await withTimeout(checkOne(n), 8000).catch(() => 'error')
+          );
         }
       })
     );
 
     for (let i = 0; i < batch; i++) {
       const n = next + i;
-      const s = results[i];
+      const s = results.get(n);
+      if (s === undefined) continue;
       if (s === 'available') {
         totalAvailable++;
         const ri = rangeIndex(n);
@@ -274,6 +398,7 @@ async function main() {
         dirtyRanges.add(ri);
       } else if (s === 'registered') {
         totalRegistered++;
+        addRegistered(n);
       } else {
         totalUnknown++;
       }
@@ -284,7 +409,7 @@ async function main() {
 
     if (next >= nextLog) {
       console.log(
-        `[scan] progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()} avail=${totalAvailable.toLocaleString()} reg=${totalRegistered.toLocaleString()} unk=${totalUnknown.toLocaleString()}`
+        `[scan] progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()} avail=${totalAvailable.toLocaleString()} reg=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unk=${totalUnknown.toLocaleString()}`
       );
       nextLog += 20000;
     }
@@ -293,7 +418,7 @@ async function main() {
       save(makeProgress(next, false));
       commit(`scan progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()}`);
       console.log(
-        `[scan] saved: ${next.toLocaleString()} scanned, ${totalAvailable.toLocaleString()} available`
+        `[scan] saved: ${next.toLocaleString()} scanned, ${totalAvailable.toLocaleString()} available, ${queriedCount.toLocaleString()} queries sent`
       );
       sinceCommit = 0;
     }
@@ -305,8 +430,9 @@ async function main() {
     `scan complete: ${totalAvailable.toLocaleString()} available domains (${TLD})`
   );
   console.log(
-    `[scan] DONE. available=${totalAvailable.toLocaleString()} registered=${totalRegistered.toLocaleString()} unknown=${totalUnknown.toLocaleString()}`
+    `[scan] DONE. available=${totalAvailable.toLocaleString()} registered=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unknown=${totalUnknown.toLocaleString()} queries=${queriedCount.toLocaleString()}`
   );
+  cleanupHistory();
 }
 
 main().catch((e) => {

@@ -203,6 +203,60 @@ export default function CheapDomainsPage() {
     }
   }, []);
 
+  const cacheMapRef = useRef(new Map<number, { a: string[]; dirty: boolean; mtime: number }>());
+  const cachedHitsRef = useRef(0);
+
+  const loadCacheChunk = useCallback((base: number) => {
+    let ch = cacheMapRef.current.get(base);
+    if (!ch) {
+      let arr: string[] = [];
+      try {
+        const raw = localStorage.getItem(`dp-cache-xyz-${base}`);
+        if (raw) arr = JSON.parse(raw);
+      } catch {
+        arr = [];
+      }
+      ch = { a: arr, dirty: false, mtime: Date.now() };
+      cacheMapRef.current.set(base, ch);
+    }
+    return ch;
+  }, []);
+
+  const cacheGetN = useCallback(
+    (n: number): ScanStatus | null => {
+      const base = Math.floor(n / 1000) * 1000;
+      const c = loadCacheChunk(base).a[n - base];
+      if (c === 'a') return 'available';
+      if (c === 'r') return 'registered';
+      if (c === 'u') return 'unknown';
+      return null;
+    },
+    [loadCacheChunk]
+  );
+
+  const cacheSetN = useCallback(
+    (n: number, s: ScanStatus) => {
+      const base = Math.floor(n / 1000) * 1000;
+      const ch = loadCacheChunk(base);
+      ch.a[n - base] = s === 'available' ? 'a' : s === 'registered' ? 'r' : 'u';
+      ch.dirty = true;
+      ch.mtime = Date.now();
+    },
+    [loadCacheChunk]
+  );
+
+  const flushCache = useCallback(() => {
+    for (const [base, ch] of cacheMapRef.current) {
+      if (!ch.dirty) continue;
+      try {
+        localStorage.setItem(`dp-cache-xyz-${base}`, JSON.stringify(ch.a));
+        ch.dirty = false;
+      } catch {
+        cacheMapRef.current.delete(base);
+      }
+    }
+  }, []);
+
   const runServer = useCallback(async () => {
     runningRef.current = true;
     setRunning(true);
@@ -254,7 +308,10 @@ export default function CheapDomainsPage() {
 
     if (syncTimerRef.current) clearInterval(syncTimerRef.current);
     syncTimerRef.current = setInterval(() => {
-      if (runningRef.current) flush();
+      if (runningRef.current) {
+        flush();
+        flushCache();
+      }
     }, 500);
 
     const worker = async () => {
@@ -262,7 +319,15 @@ export default function CheapDomainsPage() {
         const n = nextIndexRef.current++;
         if (n > end) break;
         const full = `${String(n).padStart(6, '0')}.xyz`;
-        const status = await dohCheck(full);
+        const cached = cacheGetN(n);
+        let status: ScanStatus;
+        if (cached) {
+          cachedHitsRef.current += 1;
+          status = cached;
+        } else {
+          status = await dohCheck(full);
+          cacheSetN(n, status);
+        }
         record(status, full);
       }
     };
@@ -270,11 +335,15 @@ export default function CheapDomainsPage() {
       Array.from({ length: CLIENT_WORKERS }, () => worker())
     );
     if (syncTimerRef.current) clearInterval(syncTimerRef.current);
+    flushCache();
     flush();
     runningRef.current = false;
     setRunning(false);
-    if (start + scannedRef.current > end) setMessage('扫描完成！');
-  }, [start, end, flush, syncFromState, record]);
+    if (start + scannedRef.current > end) {
+      const hits = cachedHitsRef.current;
+      setMessage(hits > 0 ? `扫描完成！缓存命中 ${hits.toLocaleString()} 个域名，零请求跳过` : '扫描完成！');
+    }
+  }, [start, end, flush, syncFromState, record, flushCache, cacheGetN, cacheSetN]);
 
   const stop = () => {
     runningRef.current = false;
