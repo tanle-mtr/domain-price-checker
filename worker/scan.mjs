@@ -11,6 +11,21 @@ import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+process.on('unhandledRejection', (r) => {
+  console.error('[scan] unhandledRejection:', r);
+  process.exit(2);
+});
+process.on('uncaughtException', (e) => {
+  console.error('[scan] uncaughtException:', e);
+  process.exit(3);
+});
+process.on('exit', (code) => {
+  console.error(`[scan] process exit code=${code}`);
+});
+process.on('beforeExit', () => {
+  console.error('[scan] beforeExit: event loop drained');
+});
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = process.env.GITHUB_WORKSPACE || path.resolve(__dirname, '..');
 const DATA = path.join(REPO, 'data');
@@ -23,6 +38,7 @@ const START = Number(process.env.SCAN_START || 0);
 const CONCURRENCY = Number(process.env.SCAN_CONCURRENCY || 150);
 const COMMIT_EVERY = Number(process.env.COMMIT_EVERY || 100000);
 const DO_COMMIT = process.env.COMMIT === '1';
+const DEBUG = process.env.SCAN_DEBUG === '1';
 const FRESH_MS = 24 * 3600 * 1000;
 const DNS_TIMEOUT_MS = 1500;
 const RDAP_TIMEOUT_MS = 4000;
@@ -41,6 +57,7 @@ let totalRegistered = 0;
 let totalUnknown = 0;
 const availByRange = new Map();
 const dirtyRanges = new Set();
+let debugCount = 0;
 
 function loadJson(file, fallback) {
   try {
@@ -87,19 +104,22 @@ function save(prog) {
 
 function commit(msg) {
   if (!DO_COMMIT) return;
-  try {
-    execSync('git add -A data', { cwd: REPO, stdio: 'inherit' });
-    execSync(
-      `git -c user.name="domain-scanner[bot]" -c user.email="scanner[bot]@users.noreply.github.com" commit -m "${msg}"`,
-      { cwd: REPO, stdio: 'inherit' }
-    );
-    execSync(`git push origin HEAD:${process.env.GITHUB_REF_NAME || 'main'}`, {
-      cwd: REPO,
-      stdio: 'inherit',
-    });
-  } catch (e) {
-    console.error('[scan] commit/push failed:', e.message);
+  console.log(`[scan] commit start: ${msg}`);
+  const cmds = [
+    `git add -A data`,
+    `git -c user.name="domain-scanner[bot]" -c user.email="scanner[bot]@users.noreply.github.com" commit -m "${msg}"`,
+    `git push origin HEAD:${process.env.GITHUB_REF_NAME || 'main'}`,
+  ];
+  for (const cmd of cmds) {
+    console.log(`[scan] exec: ${cmd}`);
+    try {
+      execSync(cmd, { cwd: REPO, stdio: 'inherit', timeout: 120000 });
+    } catch (e) {
+      console.error(`[scan] exec failed: ${cmd} -> ${e.message}`);
+      return;
+    }
   }
+  console.log(`[scan] commit ok: ${msg}`);
 }
 
 async function dnsCheck(name) {
@@ -118,10 +138,17 @@ async function dnsCheck(name) {
     } finally {
       clearTimeout(t);
     }
-    if (data.Status === 0) return 'registered';
-    if (data.Status === 3) return 'available';
-    return 'error';
+    const s = data.Status === 0 ? 'registered' : data.Status === 3 ? 'available' : 'error';
+    if (DEBUG && debugCount < 20) {
+      debugCount++;
+      console.log(`[scan] dns ${name} -> ${s} (status=${data.Status})`);
+    }
+    return s;
   } catch {
+    if (DEBUG && debugCount < 20) {
+      debugCount++;
+      console.log(`[scan] dns ${name} -> error (fetch failed)`);
+    }
     return 'error';
   }
 }
@@ -180,10 +207,11 @@ let globalStartedAt = Date.now();
 
 async function main() {
   mkdirSync(AVAIL_DIR, { recursive: true });
+  console.log(`[scan] env: TOTAL=${TOTAL} START=${START} CONCURRENCY=${CONCURRENCY} COMMIT_EVERY=${COMMIT_EVERY} DO_COMMIT=${DO_COMMIT} DEBUG=${DEBUG}`);
   const prog = loadJson(PROGRESS_FILE, null);
   let next = prog && typeof prog.next === 'number' ? prog.next : START;
 
-  if (prog && prog.completed) {
+  if (prog && prog.completed && (prog.total || TOTAL) >= TOTAL) {
     const age = Date.now() - (prog.completedAt || 0);
     if (age < FRESH_MS) {
       console.log(
@@ -195,6 +223,11 @@ async function main() {
     for (const f of readdirSync(AVAIL_DIR)) {
       unlinkSync(path.join(AVAIL_DIR, f));
     }
+    next = START;
+  }
+
+  if (prog && prog.completed && (prog.total || 0) < TOTAL) {
+    console.log('[scan] progress total < target total, restarting scan');
     next = START;
   }
 
@@ -210,6 +243,7 @@ async function main() {
   );
 
   let sinceCommit = 0;
+  let nextLog = Math.min(20000, TOTAL);
   while (next < TOTAL) {
     const batch = Math.min(2000, TOTAL - next);
     const tasks = [];
@@ -248,6 +282,13 @@ async function main() {
     next += batch;
     sinceCommit += batch;
 
+    if (next >= nextLog) {
+      console.log(
+        `[scan] progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()} avail=${totalAvailable.toLocaleString()} reg=${totalRegistered.toLocaleString()} unk=${totalUnknown.toLocaleString()}`
+      );
+      nextLog += 20000;
+    }
+
     if (sinceCommit >= COMMIT_EVERY) {
       save(makeProgress(next, false));
       commit(`scan progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()}`);
@@ -258,6 +299,7 @@ async function main() {
     }
   }
 
+  console.log('[scan] scanning loop finished, saving final state');
   save(makeProgress(next, true));
   commit(
     `scan complete: ${totalAvailable.toLocaleString()} available domains (${TLD})`

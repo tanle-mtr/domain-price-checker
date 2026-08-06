@@ -4,6 +4,23 @@ on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
+    inputs:
+      scan_total:
+        description: 'Total domains to scan (default 1000000)'
+        type: number
+        default: 1000000
+      commit_every:
+        description: 'Commit every N domains (default 100000)'
+        type: number
+        default: 100000
+      scan_concurrency:
+        description: 'Concurrent DNS checks (default 150)'
+        type: number
+        default: 150
+      scan_debug:
+        description: 'Enable debug logging (1/0)'
+        type: string
+        default: '0'
 
 concurrency:
   group: xyz-scanner
@@ -22,4 +39,7 @@ jobs:
         run: node worker/scan.mjs
         env:
           COMMIT: '1'
-          SCAN_CONCURRENCY: '150'
+          SCAN_TOTAL: ${{ inputs.scan_total }}
+          COMMIT_EVERY: ${{ inputs.commit_every }}
+          SCAN_CONCURRENCY: ${{ inputs.scan_concurrency }}
+          SCAN_DEBUG: ${{ inputs.scan_debug }}
