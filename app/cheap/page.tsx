@@ -13,6 +13,8 @@ interface Counts {
   available: number;
   registered: number;
   unknown: number;
+  expiring: number;
+  expired: number;
 }
 
 interface CloudProgress {
@@ -22,6 +24,14 @@ interface CloudProgress {
   completed: boolean;
   updatedAt: number;
   counts: Counts;
+}
+
+// 到期信息接口
+interface ExpiryInfo {
+  domain: string;
+  expiry: string;
+  daysLeft: number;
+  status: 'expiring' | 'expired';
 }
 
 const CLOUD_BASE =
@@ -108,6 +118,10 @@ export default function CheapDomainsPage() {
     error: null,
     search: '',
   });
+  const [expiryData, setExpiryData] = useState<ExpiryInfo[]>([]);
+  const [loadingExpiry, setLoadingExpiry] = useState(false);
+  const [expiringSoonCount, setExpiringSoonCount] = useState(0);
+  const [expiredCount, setExpiredCount] = useState(0);
 
   const runningRef = useRef(false);
   const availRef = useRef<string[]>([]);
@@ -458,6 +472,80 @@ export default function CheapDomainsPage() {
     URL.revokeObjectURL(url);
   };
 
+  // 加载到期数据
+  const loadExpiryData = useCallback(async () => {
+    setLoadingExpiry(true);
+    setExpiryData([]);
+    try {
+      const ranges = Array.from({ length: 10 }, (_, i) => i);
+      const expiryResults = await Promise.all(
+        ranges.map(async (i) => {
+          const from = String(i * 100000).padStart(6, '0');
+          const to = String(Math.min((i + 1) * 100000, 1000000) - 1).padStart(6, '0');
+          const res = await fetch(`${CLOUD_BASE}/expiring/xyz-${from}-${to}.txt?t=${Date.now()}`, {
+            cache: 'no-store'
+          });
+          return res.ok ? res.text() : '';
+        })
+      );
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const soonExpiry = 30; // 30天内到期
+      
+      const processed: ExpiryInfo[] = [];
+      let expiringSoon = 0;
+      let expired = 0;
+      
+      for (const text of expiryResults) {
+        if (!text) continue;
+        const lines = text.split('\n').filter(Boolean);
+        for (const line of lines) {
+          const idx = line.indexOf('\t');
+          if (idx < 0) continue;
+          const domain = line.slice(0, idx);
+          const expiryDate = line.slice(idx + 1);
+          if (!expiryDate) continue;
+          
+          const expiry = new Date(expiryDate);
+          const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          
+          let status: 'expiring' | 'expired' = 'expiring';
+          if (daysLeft < 0) {
+            status = 'expired';
+            expired++;
+          } else if (daysLeft <= soonExpiry) {
+            expiringSoon++;
+          }
+          
+          processed.push({ domain, expiry: expiryDate, daysLeft, status });
+        }
+      }
+      
+      setExpiryData(processed);
+      setExpiringSoonCount(expiringSoon);
+      setExpiredCount(expired);
+    } catch (e) {
+      console.error('Failed to load expiry data:', e);
+    } finally {
+      setLoadingExpiry(false);
+    }
+  }, []);
+
+  // 导出到期域名列表
+  const exportExpiry = () => {
+    if (expiryData.length === 0) return;
+    const blob = new Blob([expiryData.map(d => `${d.domain}\t${d.expiry}\t${d.daysLeft}天`).join('\n')], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'xyz-expiry-domains.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const total = end - start + 1;
   const scanned = Math.min(Math.max(current - start, 0), total);
   const percent = total > 0 ? Math.min((scanned / total) * 100, 100) : 0;
@@ -471,6 +559,10 @@ export default function CheapDomainsPage() {
   useEffect(() => {
     loadCloudProgress();
   }, [loadCloudProgress]);
+
+  useEffect(() => {
+    loadExpiryData();
+  }, [loadExpiryData]);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -547,7 +639,88 @@ export default function CheapDomainsPage() {
               <span className="text-amber-600 dark:text-amber-300">
                 未知：{cloud.progress.counts.unknown.toLocaleString()}
               </span>
+              {cloud.progress.counts.expiring > 0 && (
+                <span className="font-medium text-orange-600 dark:text-orange-300">
+                  即将到期：{cloud.progress.counts.expiring.toLocaleString()}
+                </span>
+              )}
+              {cloud.progress.counts.expired > 0 && (
+                <span className="font-medium text-red-600 dark:text-red-300">
+                  已过期：{cloud.progress.counts.expired.toLocaleString()}
+                </span>
+              )}
             </div>
+          </div>
+        )}
+
+        {/* 到期域名提醒 */}
+        {(expiringSoonCount > 0 || expiredCount > 0) && (
+          <div className="mt-5 rounded-xl border border-orange-200 bg-orange-50/60 p-4 shadow-sm dark:border-orange-800/60 dark:bg-orange-950/30">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h3 className="font-semibold text-orange-700 dark:text-orange-200">
+                  ⚠️ 到期域名提醒
+                </h3>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  {expiringSoonCount > 0 && (
+                    <span className="mr-4">
+                      <span className="font-medium text-orange-600 dark:text-orange-300">
+                        {expiringSoonCount.toLocaleString()}
+                      </span> 个域名将在30天内到期，抓紧抢注
+                    </span>
+                  )}
+                  {expiredCount > 0 && (
+                    <span>
+                      <span className="font-medium text-red-600 dark:text-red-300">
+                        {expiredCount.toLocaleString()}
+                      </span> 个域名已过期可立即注册
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={loadExpiryData}
+                  disabled={loadingExpiry}
+                  className="rounded-lg border border-orange-400 px-4 py-2 text-sm text-orange-700 transition-colors hover:border-orange-500 disabled:opacity-50 dark:text-orange-300"
+                >
+                  {loadingExpiry ? '加载中…' : '刷新到期数据'}
+                </button>
+                <button
+                  onClick={exportExpiry}
+                  disabled={expiryData.length === 0}
+                  className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-500 disabled:opacity-40"
+                >
+                  导出到期列表
+                </button>
+              </div>
+            </div>
+            {expiryData.length > 0 && (
+              <div className="mt-3 max-h-40 overflow-y-auto">
+                <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 md:grid-cols-6">
+                  {expiryData.slice(0, 30).map((info) => (
+                    <div
+                      key={info.domain}
+                      className={`flex items-center gap-1 ${
+                        info.status === 'expired'
+                          ? 'text-red-600 dark:text-red-300'
+                          : 'text-orange-600 dark:text-orange-300'
+                      }`}
+                    >
+                      <span className="font-medium">{info.domain}</span>
+                      <span className="text-xs opacity-75">
+                        {info.daysLeft < 0 ? `已过期${Math.abs(info.daysLeft)}天` : `${info.daysLeft}天`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {expiryData.length > 30 && (
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    还有 {expiryData.length - 30} 个域名，请导出查看完整列表
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
