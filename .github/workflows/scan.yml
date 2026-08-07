@@ -2,7 +2,7 @@ name: xyz domain scanner
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       scan_total:
@@ -22,9 +22,13 @@ on:
         type: string
         default: '0'
       force_rescan:
-        description: 'Force incremental rescan, ignore 24h freshness (1/0)'
+        description: 'Force incremental rescan, ignore freshness check (1/0)'
         type: string
         default: '0'
+      fresh_hours:
+        description: 'Skip rebuild if last scan was less than this many hours ago'
+        type: number
+        default: 24
 
 permissions:
   contents: write
@@ -51,3 +55,4 @@ jobs:
           SCAN_CONCURRENCY: ${{ inputs.scan_concurrency }}
           SCAN_DEBUG: ${{ inputs.scan_debug }}
           SCAN_FORCE: ${{ inputs.force_rescan }}
+          SCAN_FRESH_HOURS: ${{ inputs.fresh_hours || '0' }}
