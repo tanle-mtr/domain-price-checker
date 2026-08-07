@@ -11,15 +11,15 @@ interface Props {
 const STATUS_UI = {
   available: {
     label: '可注册',
-    cls: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+    cls: 'border-emerald-300 bg-emerald-50 text-emerald-600 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300',
   },
   registered: {
     label: '已注册',
-    cls: 'border-red-500/40 bg-red-500/15 text-red-300',
+    cls: 'border-red-300 bg-red-50 text-red-600 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300',
   },
   unknown: {
     label: '未知',
-    cls: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+    cls: 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300',
   },
 } as const;
 
@@ -31,19 +31,19 @@ export default function ResultSection({ results, currency, rate }: Props) {
         return (
           <div
             key={r.full}
-            className="rounded-xl border border-slate-800 bg-slate-900/60 p-5"
+            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900/60"
           >
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3">
                 <span className="text-xl font-semibold">{r.full}</span>
                 <span
-                  className={`rounded-full border px-3 py-0.5 text-sm ${ui.cls}`}
+                  className={`rounded-full border px-3 py-0.5 text-sm font-medium ${ui.cls}`}
                 >
                   {ui.label}
                 </span>
               </div>
               {r.registrar && (
-                <span className="text-sm text-slate-400">
+                <span className="text-sm text-slate-500 dark:text-slate-400">
                   注册商：{r.registrar}
                   {r.expiry ? ` · ${r.expiry.slice(0, 10)} 到期` : ''}
                 </span>
@@ -54,7 +54,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-800 text-slate-400">
+                    <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
                       <th className="py-2 pr-4 font-medium">注册商</th>
                       <th className="py-2 pr-4 font-medium">首年</th>
                       <th className="py-2 pr-4 font-medium">续费/年</th>
@@ -71,17 +71,17 @@ export default function ResultSection({ results, currency, rate }: Props) {
                       return (
                         <tr
                           key={reg.registrar}
-                          className="border-b border-slate-800/60 last:border-0"
+                          className="border-b border-slate-200/70 last:border-0 dark:border-slate-800/60"
                         >
                           <td className="py-2.5 pr-4 font-medium">
                             {reg.registrar}
                             {cheapest && (
-                              <span className="ml-2 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-300">
+                              <span className="ml-2 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-600 dark:text-blue-300">
                                 最便宜
                               </span>
                             )}
                           </td>
-                          <td className="py-2.5 pr-4">
+<td className="py-2.5 pr-4">
                             {formatPrice(reg.firstYear, currency, rate)}
                           </td>
                           <td className="py-2.5 pr-4">
@@ -100,7 +100,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                               href={checkoutUrl(reg, r.full)}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-blue-400 hover:underline"
+                              className="font-medium text-blue-600 hover:underline dark:text-blue-400"
                             >
                               购买 →
                             </a>
@@ -114,7 +114,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
             )}
 
             {r.status !== 'available' && (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 {r.status === 'registered'
                   ? '该域名已被注册，可尝试更换后缀或调整名称。'
                   : r.error

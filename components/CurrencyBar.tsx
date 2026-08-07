@@ -20,8 +20,8 @@ export default function CurrencyBar({
   onRate,
 }: Props) {
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-end gap-3 text-sm text-slate-400">
-      <div className="flex overflow-hidden rounded-lg border border-slate-700">
+    <div className="mb-6 flex flex-wrap items-center justify-end gap-3 text-sm text-slate-500 dark:text-slate-400">
+      <div className="flex overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700">
         {(['USD', 'CNY'] as CurrencyCode[]).map((c) => (
           <button
             key={c}
@@ -29,7 +29,7 @@ export default function CurrencyBar({
             className={`px-3 py-1.5 transition-colors ${
               currency === c
                 ? 'bg-blue-600 text-white'
-                : 'bg-slate-900 hover:bg-slate-800'
+                : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
             }`}
           >
             {CURRENCY_LABELS[c].split(' ')[0]}
@@ -45,9 +45,9 @@ export default function CurrencyBar({
             min="1"
             value={rate}
             onChange={(e) => onRate(parseFloat(e.target.value) || 1)}
-            className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-slate-100 outline-none focus:border-blue-500"
+            className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-center text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
           />
-          <span>
+          <span className="text-slate-500 dark:text-slate-400">
             {CURRENCY_SYMBOLS.USD} → {CURRENCY_SYMBOLS.CNY}
           </span>
         </label>

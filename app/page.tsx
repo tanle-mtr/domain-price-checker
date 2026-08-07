@@ -66,10 +66,13 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
       <header className="mb-8 text-center">
-        <h1 className="text-3xl font-bold sm:text-4xl">
+        <span className="inline-block rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-600 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+          比价 · 查询 · 一键购买
+        </span>
+        <h1 className="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">
           域名价格查询
         </h1>
-        <p className="mt-2 text-slate-400">
+        <p className="mt-2 text-slate-500 dark:text-slate-400">
           输入一个名称，对比主流注册商的首年与续费价格
         </p>
       </header>
@@ -89,24 +92,39 @@ export default function Home() {
       />
 
       {error && (
-        <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-red-300">
+        <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
           {error}
         </p>
       )}
 
       {loading && (
-        <p className="mt-8 text-center text-slate-400">
+        <div className="mt-8 flex items-center justify-center gap-3 text-slate-500 dark:text-slate-400">
+          <svg
+            className="h-5 w-5 animate-spin text-blue-500"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+            />
+          </svg>
           正在查询 {tlds.length} 个后缀，请稍候…
-        </p>
+        </div>
       )}
 
       {results && !loading && (
         <ResultSection results={results} currency={currency} rate={rate} />
       )}
-
-      <footer className="mt-16 text-center text-xs text-slate-600">
-        价格信息为公开参考价快照，实际以各注册商结算为准
-      </footer>
     </main>
   );
 }

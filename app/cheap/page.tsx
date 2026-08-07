@@ -475,19 +475,24 @@ export default function CheapDomainsPage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold sm:text-4xl">便宜域名</h1>
-        <p className="mt-2 text-slate-400">
+        <span className="inline-block rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          百万域名扫描
+        </span>
+        <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
+          便宜域名
+        </h1>
+        <p className="mt-2 text-slate-500 dark:text-slate-400">
           批量扫描 6 位数字 .xyz 域名（000000–999999，共 100 万个），筛选未注册域名并导出 TXT
         </p>
       </header>
 
-      <div className="mb-8 rounded-xl border border-emerald-800/60 bg-emerald-950/30 p-5">
+      <div className="mb-8 rounded-xl border border-emerald-200 bg-emerald-50/60 p-5 shadow-sm transition-colors dark:border-emerald-800/60 dark:bg-emerald-950/30">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-emerald-200">
+            <h2 className="text-lg font-semibold text-emerald-700 dark:text-emerald-200">
               云端后台扫描（GitHub Actions Worker）
             </h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               服务器全天候自动扫描 000000–999999 的 .xyz 域名，结果已备好，打开即用、无需等待
             </p>
           </div>
@@ -495,14 +500,14 @@ export default function CheapDomainsPage() {
             <button
               onClick={loadCloudProgress}
               disabled={cloud.loadingProgress}
-              className="rounded-lg border border-emerald-700 px-4 py-2 text-sm text-emerald-300 hover:border-emerald-500 disabled:opacity-50"
+              className="rounded-lg border border-emerald-400 px-4 py-2 text-sm text-emerald-700 transition-colors hover:border-emerald-500 disabled:opacity-50 dark:text-emerald-300"
             >
               {cloud.loadingProgress ? '刷新中…' : '刷新状态'}
             </button>
             <button
               onClick={loadCloudList}
               disabled={cloud.loadingList || !cloud.progress}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
             >
               {cloud.loadingList ? '加载中…' : '加载未注册列表'}
             </button>
@@ -511,7 +516,7 @@ export default function CheapDomainsPage() {
 
         {cloud.progress && (
           <div className="mt-4">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-400">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500 dark:text-slate-400">
               <span>
                 已扫描 {cloud.progress.next.toLocaleString()} /{' '}
                 {cloud.progress.total.toLocaleString()} (
@@ -524,7 +529,7 @@ export default function CheapDomainsPage() {
                   : `扫描中 · 更新于 ${new Date(cloud.progress.updatedAt).toLocaleString()}`}
               </span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+            <div className="h-2 overflow-hidden rounded-full bg-emerald-200 dark:bg-slate-800">
               <div
                 className="h-full bg-emerald-500 transition-all"
                 style={{
@@ -533,13 +538,13 @@ export default function CheapDomainsPage() {
               />
             </div>
             <div className="mt-2 flex flex-wrap gap-4 text-sm">
-              <span className="text-emerald-300">
+              <span className="font-medium text-emerald-600 dark:text-emerald-300">
                 未注册：{cloud.progress.counts.available.toLocaleString()}
               </span>
-              <span className="text-slate-400">
+              <span className="text-slate-500 dark:text-slate-400">
                 已注册：{cloud.progress.counts.registered.toLocaleString()}
               </span>
-              <span className="text-amber-300">
+              <span className="text-amber-600 dark:text-amber-300">
                 未知：{cloud.progress.counts.unknown.toLocaleString()}
               </span>
             </div>
@@ -547,17 +552,17 @@ export default function CheapDomainsPage() {
         )}
 
         {cloud.error && (
-          <p className="mt-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+          <p className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
             云端数据获取失败：{cloud.error}（worker 可能尚未启动或首次构建中，可稍后刷新）
           </p>
         )}
 
         {cloud.list.length > 0 && (
-          <div className="mt-5 border-t border-emerald-900/60 pt-4">
+          <div className="mt-5 border-t border-emerald-200 pt-4 dark:border-emerald-900/60">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm text-slate-300">
+              <span className="text-sm text-slate-600 dark:text-slate-300">
                 已加载{' '}
-                <span className="font-semibold text-emerald-300">
+                <span className="font-semibold text-emerald-600 dark:text-emerald-300">
                   {cloud.list.length.toLocaleString()}
                 </span>{' '}
                 个未注册域名
@@ -566,7 +571,7 @@ export default function CheapDomainsPage() {
                 value={cloud.search}
                 onChange={(e) => setCloud((c) => ({ ...c, search: e.target.value }))}
                 placeholder="搜索（如 888 或 123）"
-                className="w-44 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500"
+                className="w-44 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
               <button
                 onClick={exportCloud}
@@ -585,7 +590,7 @@ export default function CheapDomainsPage() {
                 .filter((d) => (cloud.search ? d.includes(cloud.search) : true))
                 .slice(0, 60)
                 .map((d) => (
-                  <span key={d} className="text-emerald-300">
+                  <span key={d} className="font-medium text-emerald-600 dark:text-emerald-300">
                     {d}
                   </span>
                 ))}
@@ -594,7 +599,7 @@ export default function CheapDomainsPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900/60">
         <div className="mb-4 flex items-center gap-2 text-sm">
           <button
             onClick={() => setMode('server')}
@@ -602,7 +607,7 @@ export default function CheapDomainsPage() {
             className={`rounded-lg px-4 py-2 transition-colors ${
               mode === 'server'
                 ? 'bg-blue-600 text-white'
-                : 'border border-slate-700 text-slate-300 hover:border-slate-500'
+                : 'border border-slate-300 text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500'
             }`}
           >
             服务端扫描
@@ -613,7 +618,7 @@ export default function CheapDomainsPage() {
             className={`rounded-lg px-4 py-2 transition-colors ${
               mode === 'client'
                 ? 'bg-blue-600 text-white'
-                : 'border border-slate-700 text-slate-300 hover:border-slate-500'
+                : 'border border-slate-300 text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500'
             }`}
           >
             浏览器直扫（最快）
@@ -621,7 +626,7 @@ export default function CheapDomainsPage() {
         </div>
 
         <div className="flex flex-wrap items-end gap-4">
-          <label className="text-sm text-slate-400">
+          <label className="text-sm text-slate-500 dark:text-slate-400">
             起始
             <input
               type="number"
@@ -633,10 +638,10 @@ export default function CheapDomainsPage() {
                   Math.min(Math.max(parseInt(e.target.value, 10) || 0, 0), 999999)
                 )
               }
-              className="mt-1 block w-32 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none focus:border-blue-500"
+              className="mt-1 block w-32 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </label>
-          <label className="text-sm text-slate-400">
+          <label className="text-sm text-slate-500 dark:text-slate-400">
             结束
             <input
               type="number"
@@ -648,34 +653,34 @@ export default function CheapDomainsPage() {
                   Math.min(Math.max(parseInt(e.target.value, 10) || 0, 0), 999999)
                 )
               }
-              className="mt-1 block w-32 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 outline-none focus:border-blue-500"
+              className="mt-1 block w-32 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </label>
           <button
             onClick={mode === 'client' ? runClient : runServer}
             disabled={running}
-            className="rounded-lg bg-blue-600 px-6 py-2.5 font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-lg bg-blue-600 px-6 py-2.5 font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
           >
             {running ? '扫描中…' : '开始 / 继续扫描'}
           </button>
           {running && (
             <button
               onClick={stop}
-              className="rounded-lg border border-slate-700 px-6 py-2.5 text-slate-300 hover:border-slate-500"
+              className="rounded-lg border border-slate-300 px-6 py-2.5 text-slate-600 transition-colors hover:border-slate-400 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500"
             >
               暂停
             </button>
           )}
           <button
             onClick={reset}
-            className="rounded-lg border border-slate-700 px-6 py-2.5 text-slate-300 hover:border-slate-500"
+            className="rounded-lg border border-slate-300 px-6 py-2.5 text-slate-600 transition-colors hover:border-slate-400 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-500"
           >
             重置进度
           </button>
           <button
             onClick={exportTxt}
             disabled={(availRef.current.length > 0 ? availRef.current : availableList).length === 0}
-            className="rounded-lg bg-emerald-600 px-6 py-2.5 font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
+            className="rounded-lg bg-emerald-600 px-6 py-2.5 font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-40"
           >
             导出 TXT（
             {(availRef.current.length > 0 ? availRef.current : availableList).length.toLocaleString()}
@@ -684,14 +689,14 @@ export default function CheapDomainsPage() {
         </div>
 
         <div className="mt-6">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-400">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500 dark:text-slate-400">
             <span>
               进度：{scanned.toLocaleString()} / {total.toLocaleString()} (
               {percent.toFixed(2)}%)
             </span>
             <span>当前：{String(Math.min(current, end)).padStart(6, '0')}</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+          <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
             <div
               className="h-full bg-blue-600 transition-all"
               style={{ width: `${percent}%` }}
@@ -700,47 +705,47 @@ export default function CheapDomainsPage() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-4 text-sm">
-          <span className="text-emerald-300">
+          <span className="font-medium text-emerald-600 dark:text-emerald-300">
             可注册：{counts.available.toLocaleString()}
           </span>
-          <span className="text-red-300">
+          <span className="text-red-600 dark:text-red-300">
             已注册：{counts.registered.toLocaleString()}
           </span>
-          <span className="text-amber-300">
+          <span className="text-amber-600 dark:text-amber-300">
             未知：{counts.unknown.toLocaleString()}
           </span>
         </div>
 
         {message && (
-          <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">
+          <p className="mt-4 rounded-lg border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
             {message}
           </p>
         )}
 
         {mode === 'client' && (
-          <p className="mt-4 text-xs text-slate-500">
+          <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">
             浏览器直扫模式：直接向
             Cloudflare/Google DNS 的 DoH 接口查询（无需经过服务器，无 60s
-            限制），DNS 报 NXDOMAIN 即判为可注册；DNS 失败才降级到
-            rdap.org 确认。需保持本页面打开。
+            限制），DNS 报 NXDOMAIN 后再经注册局 RDAP
+            确认（404 才算可注册），避免误报已注册域名。需保持本页面打开。
           </p>
         )}
         {mode === 'server' && (
-          <p className="mt-4 text-xs text-slate-500">
+          <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">
             服务端扫描：每批 {BATCH} 个、100 并发，通过服务器 DNS
-            预筛选 + 直连注册局确认，稳定性优于浏览器直扫。
+            预筛选 + 注册局 RDAP 确认，稳定性优于浏览器直扫。
           </p>
         )}
       </div>
 
       {availableList.length > 0 && (
-        <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900/60">
           <h2 className="mb-3 text-lg font-semibold">
             已发现未注册域名（前 100 条，完整列表请导出 TXT）
           </h2>
           <div className="grid grid-cols-2 gap-1 text-sm sm:grid-cols-4 md:grid-cols-6">
             {availableList.slice(0, 100).map((d) => (
-              <span key={d} className="text-emerald-300">
+              <span key={d} className="font-medium text-emerald-600 dark:text-emerald-300">
                 {d}
               </span>
             ))}
@@ -748,7 +753,7 @@ export default function CheapDomainsPage() {
         </div>
       )}
 
-      <p className="mt-8 text-center text-xs text-slate-600">
+      <p className="mt-8 text-center text-xs text-slate-400 dark:text-slate-600">
         进度自动保存，可随时暂停后改天继续；DNS 判定可能有个别误差，购买前请在注册商结算页确认
       </p>
     </main>
