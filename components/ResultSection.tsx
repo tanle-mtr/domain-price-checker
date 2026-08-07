@@ -18,10 +18,6 @@ const STATUS_UI = {
     label: '已注册',
     cls: 'border-red-300 bg-red-50 text-red-600 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300',
   },
-  unknown: {
-    label: '未知',
-    cls: 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300',
-  },
 } as const;
 
 export default function ResultSection({ results, currency, rate }: Props) {
@@ -53,6 +49,9 @@ export default function ResultSection({ results, currency, rate }: Props) {
 
             {r.status === 'available' && (
               <div className="overflow-x-auto">
+                <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                  ⓘ 价格为参考价，实际价格以注册商结算页为准
+                </p>
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
@@ -82,8 +81,13 @@ export default function ResultSection({ results, currency, rate }: Props) {
                               </span>
                             )}
                           </td>
-<td className="py-2.5 pr-4">
-                            {formatPrice(reg.firstYear, currency, rate)}
+                          <td className="py-2.5 pr-4">
+                            <div className="flex items-center gap-1">
+                              <span>{formatPrice(reg.firstYear, currency, rate)}</span>
+                              {reg.note && (
+                                <span className="text-xs text-slate-400" title={reg.note}>ⓘ</span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-2.5 pr-4">
                             {formatPrice(reg.renewal, currency, rate)}
@@ -117,11 +121,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
             {r.status !== 'available' && (
               <div className="space-y-3">
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {r.status === 'registered'
-                    ? '该域名已被注册，可查看以下 WHOIS 信息了解详情。'
-                    : r.error
-                      ? `暂时无法查询：${r.error}`
-                      : '暂时无法查询该后缀的状态，请稍后重试。'}
+                  该域名已被注册，可查看以下 WHOIS 信息了解详情。
                 </p>
                 
                 {r.status === 'registered' && r.whois && (

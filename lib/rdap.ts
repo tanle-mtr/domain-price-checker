@@ -1,7 +1,8 @@
 import { domainToASCII } from "node:url";
 import { resolveAny } from "node:dns/promises";
+import net from "node:net";
 
-export type AvailabilityStatus = "available" | "registered" | "unknown";
+export type AvailabilityStatus = "available" | "registered";
 
 export interface WhoisInfo {
   registrar?: string | null;
@@ -27,6 +28,30 @@ export interface AvailabilityResult {
 
 const RDAP_TIMEOUT_MS = 6500;
 const DNS_TIMEOUT_MS = 3500;
+const WHOIS_TIMEOUT_MS = 5000;
+
+/** WHOIS TCP 服务器映射 */
+const WHOIS_SERVERS: Record<string, string> = {
+  com: "whois.verisign-grs.com",
+  net: "whois.verisign-grs.com",
+  org: "whois.pir.org",
+  info: "whoisafil.info",
+  name: "whois.netsol.com",
+  me: "whois.nic.me",
+  tv: "whois.nic.tv",
+  cc: "whois.nic.cc",
+  io: "whois.nic.io",
+  co: "whois.nic.co",
+  dev: "whois.nic.dev",
+  app: "whois.nic.app",
+  xyz: "whois.centralnic.com",
+  cn: "whois.cnnic.cn",
+  top: "whois.nic.top",
+  vip: "whois.nic.vip",
+  site: "whois.nic.site",
+  tech: "whois.nic.tech",
+  online: "whois.nic.online",
+};
 
 /** IANA 官方 RDAP 直连端点（rdap.org 失败时的降级，按顺序尝试），覆盖常见后缀 */
 const RDAP_DIRECT: Record<string, string[]> = {
@@ -168,12 +193,94 @@ function parseRdap(
   return { registrar, expiry, whois };
 }
 
+/** TCP WHOIS 查询 */
+async function whoisTcpQuery(
+  domain: string,
+  server: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const client = net.createConnection({ port: 43, host: server }, () => {
+      client.write(domain + "\r\n");
+    });
+
+    let data = "";
+    const timer = setTimeout(() => {
+      client.destroy();
+      reject(new Error("WHOIS timeout"));
+    }, WHOIS_TIMEOUT_MS);
+
+    client.on("data", (chunk: Buffer) => {
+      data += chunk.toString();
+    });
+
+    client.on("end", () => {
+      clearTimeout(timer);
+      resolve(data);
+    });
+
+    client.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/** 解析 WHOIS 文本判断是否可注册 */
+function parseWhoisAvailability(data: string): "available" | "registered" | null {
+  if (!data) return null;
+
+  // 明确标记为可用的关键词
+  const availablePatterns = [
+    /No match for/i,
+    /NOT FOUND/i,
+    /No matches/i,
+    /is free/i,
+    /is unregistered/i,
+    /No matching record/i,
+    /not registered/i,
+    /No Data Found/i,
+    /No entries found/i,
+    /This query returned 0 objects/i,
+    /No match$/im,
+    /status: free/i,
+    /Status: free/i,
+  ];
+
+  for (const pattern of availablePatterns) {
+    if (pattern.test(data)) return "available";
+  }
+
+  // 明确标记为已注册的关键词
+  const registeredPatterns = [
+    /Domain Name:/i,
+    /Registrant:/i,
+    /Registrar:/i,
+    /Creation Date:/i,
+    /Expiry Date:/i,
+    /Registration Date:/i,
+    /Registry Expiry Date:/i,
+    /Paid Toll:/i,
+    /Renewal Date:/i,
+    /Name Server:/i,
+    /DNSSEC:/i,
+    /Status:/i,
+  ];
+
+  for (const pattern of registeredPatterns) {
+    if (pattern.test(data)) return "registered";
+  }
+
+  // 无法判断，返回 null
+  return null;
+}
+
 export async function checkAvailability(
   name: string,
   tld: string
 ): Promise<AvailabilityResult> {
   const full = domainToASCII(`${name}.${tld}`).toLowerCase();
 
+  // 1. 尝试 RDAP
   const endpoints = [
     `https://rdap.org/domain/${full}`,
     ...(RDAP_DIRECT[tld] ?? []).map((base) => `${base}domain/${full}`),
@@ -210,28 +317,64 @@ export async function checkAvailability(
     }
   }
 
+  // 2. DNS 检查作为快速预筛选
+  let dnsResult: "registered" | "available" | null = null;
   try {
-    const records = await Promise.race([
-      resolveAny(full),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("dns timeout")), DNS_TIMEOUT_MS)
-      ),
+    const [aRecords, nsRecords] = await Promise.all([
+      resolveAny(full).then((r) => r).catch(() => []),
+      resolveNs(full).then((r) => r).catch(() => []),
     ]);
-    if (records && records.length > 0) {
-      return { tld, full, status: "registered", source: "dns" };
+    if (aRecords.length > 0 || nsRecords.length > 0) {
+      dnsResult = "registered";
+    } else {
+      dnsResult = "available";
     }
-    return { tld, full, status: "available", source: "dns" };
-  } catch (err) {
-    const code = (err as { code?: string })?.code;
-    if (code === "ENOENT" || code === "ENODATA" || code === "ENOTFOUND") {
-      return { tld, full, status: "available", source: "dns" };
+  } catch {
+    dnsResult = null;
+  }
+
+  // 3. TCP WHOIS 作为权威确认（消除 unknown 状态）
+  const whoisServer = WHOIS_SERVERS[tld] || "whois.internic.net";
+  try {
+    const whoisData = await whoisTcpQuery(full, whoisServer);
+    const whoisStatus = parseWhoisAvailability(whoisData);
+    if (whoisStatus) {
+      return {
+        tld,
+        full,
+        status: whoisStatus,
+        source: "whois",
+        registrar: null,
+        expiry: null,
+        whois: { rawText: whoisData.slice(0, 500) },
+      };
     }
+  } catch {
+    // WHOIS 失败，使用 DNS 结果
+  }
+
+  // 4. 最终回退到 DNS 结果
+  if (dnsResult) {
     return {
       tld,
       full,
-      status: "unknown",
-      source: "none",
-      error: err instanceof Error ? err.message : String(err),
+      status: dnsResult,
+      source: "dns",
     };
   }
+
+  // 5. 所有方法都失败，返回 available（保守策略：宁可错放不可错杀）
+  return {
+    tld,
+    full,
+    status: "available",
+    source: "fallback",
+  };
+}
+
+/** 辅助函数：查询 NS 记录 */
+async function resolveNs(name: string): Promise<string[]> {
+  const dns = await import("node:dns/promises");
+  const results = await dns.resolveNs(name).catch(() => []);
+  return results;
 }

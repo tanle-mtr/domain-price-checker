@@ -14,6 +14,8 @@ export interface RegistrarPrice {
   homepage: string;
   /** 结算页 URL 模板，{domain} 会被替换 */
   checkoutTemplate: string;
+  /** 价格备注（如促销说明） */
+  note?: string;
 }
 
 const XN = "https://www.xinnet.com";
@@ -83,12 +85,13 @@ export const REGISTRARS: RegistrarPrice[] = [
   },
   {
     registrar: "阿里云",
-    firstYear: 8.7,
-    renewal: 11.1,
+    firstYear: 0.99,
+    renewal: 50,
     whoisProtection: 0,
     cn: true,
     homepage: ZH,
     checkoutTemplate: "https://wanwang.aliyun.com/domain/searchresult/?keyword={domain}",
+    note: "首年促销价约 ¥7 起（活动价），续费约 ¥50/年；实际价格以结算页为准",
   },
   {
     registrar: "腾讯云",
