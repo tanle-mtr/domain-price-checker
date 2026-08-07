@@ -227,14 +227,29 @@ export default function ResultSection({ results, currency, rate }: Props) {
                     )}
 
                     <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
-                      <Link
+                      <a
                         href={`/whois?domain=${encodeURIComponent(r.full)}`}
-                        className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                        className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400"
                       >
-                        查询完整 WHOIS 信息 →
-                      </Link>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h6m2 4h-8m0 0l-4 4m4-4l-4-4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                        查询完整 WHOIS 信息
+                      </a>
                     </div>
                   </div>
+                )}
+
+                {/* 显示原始 WHOIS 文本（如果有） */}
+                {r.whois?.rawText && (
+                  <details className="rounded-lg border border-slate-200 dark:border-slate-700">
+                    <summary className="cursor-pointer px-4 py-2 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                      查看原始 WHOIS 数据
+                    </summary>
+                    <pre className="mx-4 mb-4 max-h-40 overflow-auto rounded bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                      {r.whois.rawText}
+                    </pre>
+                  </details>
                 )}
               </div>
             )}

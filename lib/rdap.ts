@@ -275,6 +275,127 @@ function parseWhoisAvailability(data: string): "available" | "registered" | null
   return null;
 }
 
+/** 从 WHOIS 文本中解析详细信息 */
+function parseWhoisData(data: string): WhoisInfo {
+  const info: WhoisInfo = { rawText: data.slice(0, 2000) };
+
+  if (!data) return info;
+
+  const lines = data.split(/\r?\n/);
+  let lastKey = "";
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx === -1) {
+      // 续行
+      if (lastKey) {
+        const key = lastKey.toLowerCase();
+        if (key === "nameserver" || key.startsWith("nameserver")) {
+          if (!info.nameservers) info.nameservers = [];
+          info.nameservers.push(trimmed);
+        }
+      }
+      continue;
+    }
+
+    const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
+    const value = trimmed.slice(colonIdx + 1).trim();
+
+    if (!value) {
+      lastKey = key;
+      continue;
+    }
+
+    lastKey = key;
+
+    // 注册商
+    if (key.includes("registrar") && !info.registrar) {
+      info.registrar = value
+        .replace(/\s*\([^)]*\)/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    // 注册商 URL
+    if (key.includes("registrar url") || key.includes("registrar www")) {
+      info.registrarUrl = value;
+    }
+
+    // 创建日期
+    if (
+      (key.includes("creation") || key.includes("created") || key.includes("registration date")) &&
+      !info.creationDate
+    ) {
+      info.creationDate = extractDateFromWhois(value);
+    }
+
+    // 到期日期
+    if (
+      (key.includes("expiry") || key.includes("expiration") || key.includes("expire")) &&
+      !info.expiryDate
+    ) {
+      info.expiryDate = extractDateFromWhois(value);
+    }
+
+    // 更新日期
+    if (
+      (key.includes("updated") || key.includes("last update") || key.includes("modified")) &&
+      !info.updatedDate
+    ) {
+      info.updatedDate = extractDateFromWhois(value);
+    }
+
+    // Nameservers
+    if (key.includes("nameserver") || key.match(/^ns\d*$/)) {
+      if (!info.nameservers) info.nameservers = [];
+      info.nameservers.push(value);
+    }
+
+    // Status
+    if (key.includes("status") && !info.status) {
+      info.status = value
+        .split(/[,\s]+/)
+        .filter((s) => s.length > 0)
+        .map((s) => s.replace(/[\[\]]/g, ""));
+    }
+
+    // Registry Domain ID
+    if (key.includes("registry domain id") || key.includes("domain id")) {
+      info.registryDomainId = value;
+    }
+  }
+
+  return info;
+}
+
+/** 从 WHOIS 值中提取日期 */
+function extractDateFromWhois(value: string): string | undefined {
+  if (!value) return undefined;
+
+  const patterns = [
+    /(\d{4}-\d{2}-\d{2})/i,
+    /(\d{2}[-\/]\d{2}[-\/]\d{4})/i,
+    /(\d{4}\.\d{2}\.\d{2})/,
+    /([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4})/i,
+    /(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match?.[1]) {
+      const date = new Date(match[1]);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().slice(0, 10);
+      }
+    }
+  }
+
+  return value.slice(0, 20);
+}
+
 export async function checkAvailability(
   name: string,
   tld: string
@@ -347,7 +468,7 @@ export async function checkAvailability(
         source: "whois",
         registrar: null,
         expiry: null,
-        whois: { rawText: whoisData.slice(0, 500) },
+        whois: parseWhoisData(whoisData),
       };
     }
   } catch {
