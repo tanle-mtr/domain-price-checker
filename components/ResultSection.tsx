@@ -114,13 +114,119 @@ export default function ResultSection({ results, currency, rate }: Props) {
             )}
 
             {r.status !== 'available' && (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {r.status === 'registered'
-                  ? '该域名已被注册，可尝试更换后缀或调整名称。'
-                  : r.error
-                    ? `暂时无法查询：${r.error}`
-                    : '暂时无法查询该后缀的状态，请稍后重试。'}
-              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {r.status === 'registered'
+                    ? '该域名已被注册，可查看以下 WHOIS 信息了解详情。'
+                    : r.error
+                      ? `暂时无法查询：${r.error}`
+                      : '暂时无法查询该后缀的状态，请稍后重试。'}
+                </p>
+                
+                {r.status === 'registered' && r.whois && (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <h4 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+                      WHOIS 信息
+                    </h4>
+                    <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                      {r.whois.registrar && (
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400">注册商：</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            {r.whois.registrar}
+                          </span>
+                          {r.whois.registrarUrl && (
+                            <a
+                              href={r.whois.registrarUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="ml-2 text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                              [官网]
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      {r.whois.creationDate && (
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400">创建日期：</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            {new Date(r.whois.creationDate).toLocaleDateString('zh-CN')}
+                          </span>
+                        </div>
+                      )}
+                      {r.whois.expiryDate && (
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400">到期日期：</span>
+                          <span className={`font-medium ${
+                            new Date(r.whois.expiryDate) < new Date()
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'font-medium text-slate-700 dark:text-slate-200'
+                          }`}>
+                            {new Date(r.whois.expiryDate).toLocaleDateString('zh-CN')}
+                          </span>
+                          {(() => {
+                            const daysLeft = Math.ceil(
+                              (new Date(r.whois.expiryDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                            );
+                            if (daysLeft < 0) return <span className="ml-1 text-xs text-red-500">（已过期{Math.abs(daysLeft)}天）</span>;
+                            if (daysLeft < 30) return <span className="ml-1 text-xs text-orange-500">（即将到期）</span>;
+                            return null;
+                          })()}
+                        </div>
+                      )}
+                      {r.whois.updatedDate && (
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400">更新日期：</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            {new Date(r.whois.updatedDate).toLocaleDateString('zh-CN')}
+                          </span>
+                        </div>
+                      )}
+                      {r.whois.registryDomainId && (
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400">注册局ID：</span>
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            {r.whois.registryDomainId}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {r.whois.nameservers && r.whois.nameservers.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                        <span className="text-slate-500 dark:text-slate-400">Nameservers：</span>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {r.whois.nameservers.map((ns, i) => (
+                            <span
+                              key={i}
+                              className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-300"
+                            >
+                              {ns}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {r.whois.status && r.whois.status.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                        <span className="text-slate-500 dark:text-slate-400">域名状态：</span>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {r.whois.status.map((s, i) => (
+                            <span
+                              key={i}
+                              className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         );

@@ -98,6 +98,8 @@ export default function CheapDomainsPage() {
     available: 0,
     registered: 0,
     unknown: 0,
+    expiring: 0,
+    expired: 0,
   });
   const [availableList, setAvailableList] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
@@ -125,7 +127,7 @@ export default function CheapDomainsPage() {
 
   const runningRef = useRef(false);
   const availRef = useRef<string[]>([]);
-  const countsRef = useRef<Counts>({ available: 0, registered: 0, unknown: 0 });
+  const countsRef = useRef<Counts>({ available: 0, registered: 0, unknown: 0, expiring: 0, expired: 0 });
   const scannedRef = useRef(0);
   const nextIndexRef = useRef(0);
   const lastFlushedRef = useRef(0);
@@ -379,12 +381,12 @@ export default function CheapDomainsPage() {
     runningRef.current = false;
     setRunning(false);
     availRef.current = [];
-    countsRef.current = { available: 0, registered: 0, unknown: 0 };
+    countsRef.current = { available: 0, registered: 0, unknown: 0, expiring: 0, expired: 0 };
     scannedRef.current = 0;
     nextIndexRef.current = start;
     lastFlushedRef.current = 0;
     setCurrent(start);
-    setCounts({ available: 0, registered: 0, unknown: 0 });
+    setCounts({ available: 0, registered: 0, unknown: 0, expiring: 0, expired: 0 });
     setAvailableList([]);
     setMessage(null);
     try {

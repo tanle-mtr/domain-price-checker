@@ -3,6 +3,17 @@ import { resolveAny } from "node:dns/promises";
 
 export type AvailabilityStatus = "available" | "registered" | "unknown";
 
+export interface WhoisInfo {
+  registrar?: string | null;
+  registrarUrl?: string | null;
+  creationDate?: string | null;
+  expiryDate?: string | null;
+  updatedDate?: string | null;
+  nameservers?: string[] | null;
+  status?: string[] | null;
+  registryDomainId?: string | null;
+}
+
 export interface AvailabilityResult {
   tld: string;
   full: string;
@@ -11,6 +22,7 @@ export interface AvailabilityResult {
   expiry?: string | null;
   source: "rdap" | "dns" | "none";
   error?: string | null;
+  whois?: WhoisInfo | null;
 }
 
 const RDAP_TIMEOUT_MS = 6500;
@@ -57,43 +69,103 @@ async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
 
 function parseRdap(
   data: unknown
-): { registrar?: string; expiry?: string } {
+): { registrar?: string; expiry?: string; whois?: WhoisInfo } {
   let registrar: string | undefined;
+  let registrarUrl: string | undefined;
   let expiry: string | undefined;
+  let creationDate: string | undefined;
+  let updatedDate: string | undefined;
+  let nameservers: string[] | undefined;
+  let status: string[] | undefined;
+  let registryDomainId: string | undefined;
+  
   try {
     const obj = data as {
-      entities?: { vcardArray?: [string, unknown[][]] }[];
+      handle?: string;
+      ldhName?: string;
+      entities?: { vcardArray?: [string, unknown[][]]; roles?: string[]; links?: { rel?: string; href?: string }[] }[];
       events?: { eventAction?: string; eventDate?: string }[];
+      nameservers?: { ldhName?: string }[];
+      status?: string[];
+      links?: { rel?: string; href?: string }[];
     };
+    
+    // 解析注册商信息
     for (const entity of obj.entities ?? []) {
-      if (!registrar && Array.isArray(entity.vcardArray)) {
-        const vcard = entity.vcardArray[1];
-        if (Array.isArray(vcard)) {
-          for (const row of vcard) {
-            if (Array.isArray(row) && row[0] === "fn" && row[2] !== undefined) {
-              // jCard 格式: [name, params, 值类型("text"), 值]
-              registrar = String(row[3] ?? row[2] ?? "");
-              break;
-            }
-          }
+      const roles = entity.roles ?? [];
+      if (roles.includes('registrar') && !registrar) {
+        const vcard = entity.vcardArray;
+        if (vcard && Array.isArray(vcard[1])) {
+          const fnEntry = vcard[1].find((f) => Array.isArray(f) && f[0] === 'fn');
+          if (fnEntry?.[3]) registrar = String(fnEntry[3]);
+          else if (fnEntry?.[2]) registrar = String(fnEntry[2]);
         }
       }
-    }
-    for (const event of obj.events ?? []) {
-      const action = event.eventAction ?? "";
-      if (
-        action === "expiration" ||
-        action === "registration expiration" ||
-        action === "registration_expiration"
-      ) {
-        expiry = event.eventDate;
-        break;
+      if (roles.includes('registrar') && !registrarUrl) {
+        const aboutLink = (entity.links ?? []).find((l) => l.rel === 'about' || l.rel === 'related');
+        if (aboutLink?.href) registrarUrl = aboutLink.href;
       }
     }
+    
+    // 解析事件日期
+    for (const event of obj.events ?? []) {
+      const action = event.eventAction ?? '';
+      if (!event.eventDate) continue;
+      
+      if (
+        action === 'creation' ||
+        action === 'registration' ||
+        action === 'registration creation'
+      ) {
+        creationDate = event.eventDate;
+      } else if (
+        action === 'expiration' ||
+        action === 'registration expiration' ||
+        action === 'registration_expiration'
+      ) {
+        expiry = event.eventDate;
+      } else if (
+        action === 'last changed' ||
+        action === 'updated' ||
+        action === 'last update of RDAP database'
+      ) {
+        updatedDate = event.eventDate;
+      }
+    }
+    
+    // 解析域名状态
+    if (obj.status && Array.isArray(obj.status)) {
+      status = obj.status;
+    }
+    
+    // 解析注册商ID
+    if (obj.handle) {
+      registryDomainId = obj.handle;
+    }
+    
+    // 解析 Nameservers
+    if (obj.nameservers && Array.isArray(obj.nameservers)) {
+      nameservers = obj.nameservers
+        .map((ns) => ns.ldhName)
+        .filter((n): n is string => Boolean(n));
+    }
+    
   } catch {
     // 解析失败不影响主流程
   }
-  return { registrar, expiry };
+  
+  const whois: WhoisInfo = {
+    registrar: registrar ?? null,
+    registrarUrl: registrarUrl ?? null,
+    creationDate: creationDate ?? null,
+    expiryDate: expiry ?? null,
+    updatedDate: updatedDate ?? null,
+    nameservers: nameservers ?? null,
+    status: status ?? null,
+    registryDomainId: registryDomainId ?? null,
+  };
+  
+  return { registrar, expiry, whois };
 }
 
 export async function checkAvailability(
@@ -112,7 +184,7 @@ export async function checkAvailability(
       const res = await fetchWithTimeout(endpoint, RDAP_TIMEOUT_MS);
       if (res.status === 200) {
         const data = await res.json().catch(() => null);
-        const { registrar, expiry } = parseRdap(data);
+        const { registrar, expiry, whois } = parseRdap(data);
         return {
           tld,
           full,
@@ -120,6 +192,7 @@ export async function checkAvailability(
           registrar: registrar ?? null,
           expiry: expiry ?? null,
           source: "rdap",
+          whois: whois,
         };
       }
       if (res.status === 404) {
