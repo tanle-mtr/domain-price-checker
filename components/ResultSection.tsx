@@ -1,6 +1,7 @@
 import { REGISTRARS, checkoutUrl, cheapestFirstYear } from '@/lib/pricing';
 import { formatPrice, type CurrencyCode } from '@/lib/currency';
 import type { AvailabilityResult } from '@/lib/rdap';
+import Link from 'next/link';
 
 interface Props {
   results: AvailabilityResult[];
@@ -224,6 +225,15 @@ export default function ResultSection({ results, currency, rate }: Props) {
                         </div>
                       </div>
                     )}
+
+                    <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+                      <Link
+                        href={`/whois?domain=${encodeURIComponent(r.full)}`}
+                        className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        查询完整 WHOIS 信息 →
+                      </Link>
+                    </div>
                   </div>
                 )}
               </div>

@@ -38,6 +38,12 @@ export default function RootLayout({
             >
               便宜域名
             </Link>
+            <Link
+              href="/whois"
+              className="rounded-lg px-3 py-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+            >
+              WHOIS查询
+            </Link>
             <div className="ml-auto">
               <ThemeToggle />
             </div>
