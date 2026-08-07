@@ -10,6 +10,12 @@ import {
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const net = require('node:net');
+const dns = require('node:dns');
+const util = require('node:util');
 
 process.on('unhandledRejection', (r) => {
   console.error('[scan] unhandledRejection:', r);
@@ -46,6 +52,12 @@ const FRESH_MS = FRESH_HOURS * 3600 * 1000;
 const DNS_TIMEOUT_MS = 1500;
 const RDAP_TIMEOUT_MS = 4000;
 const RANGE = 100000;
+const EXPIRY_DIR = path.join(DATA, 'expiring');
+const CONFIRMED_DIR = path.join(DATA, 'confirmed');
+const EXPIRY_CHECK_HOURS = 24; // 到期前24小时开始检测
+
+// 到期阈值: 30天内到期的域名视为"即将到期"
+const SOON_EXPIRY_DAYS = 30;
 
 let dohIndex = 0;
 const DOH_PROVIDERS = [
@@ -60,10 +72,17 @@ let totalRegistered = 0;
 let totalUnknown = 0;
 let skippedRegistered = 0;
 let queriedCount = 0;
+let totalExpiring = 0; // 即将到期域名数
+let totalExpired = 0; // 已过期域名数
+let totalConfirmed = 0; // 二次确认域名数
 const availByRange = new Map();
 const registeredByRange = new Map();
+const expiryByRange = new Map();
+const confirmedByRange = new Map();
 const dirtyRanges = new Set();
 const dirtyRegisteredRanges = new Set();
+const dirtyExpiryRanges = new Set();
+const dirtyConfirmedRanges = new Set();
 let debugCount = 0;
 
 function loadJson(file, fallback) {
@@ -109,6 +128,72 @@ function loadRegisteredRange(ri) {
   return loadNumSet(registeredFile(ri));
 }
 
+function expiryFile(ri) {
+  const from = String(ri * RANGE).padStart(6, '0');
+  const to = String(Math.min((ri + 1) * RANGE, TOTAL) - 1).padStart(6, '0');
+  return path.join(EXPIRY_DIR, `${TLD}-${from}-${to}.txt`);
+}
+
+function confirmedFile(ri) {
+  const from = String(ri * RANGE).padStart(6, '0');
+  const to = String(Math.min((ri + 1) * RANGE, TOTAL) - 1).padStart(6, '0');
+  return path.join(CONFIRMED_DIR, `${TLD}-${from}-${to}.txt`);
+}
+
+function loadExpiryRange(ri) {
+  const f = expiryFile(ri);
+  if (!existsSync(f)) return new Map();
+  return new Map(
+    readFileSync(f, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const idx = line.indexOf('\t');
+        return idx >= 0 ? [line.slice(0, idx), line.slice(idx + 1)] : [line, null];
+      })
+  );
+}
+
+function loadConfirmedRange(ri) {
+  const f = confirmedFile(ri);
+  if (!existsSync(f)) return new Set();
+  return new Set(
+    readFileSync(f, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => parseInt(line.split('.')[0], 10))
+      .filter((n) => Number.isInteger(n))
+  );
+}
+
+function preloadExpiry() {
+  let loaded = 0;
+  for (let ri = 0; ri < Math.ceil(TOTAL / RANGE); ri++) {
+    const map = loadExpiryRange(ri);
+    if (map.size) {
+      expiryByRange.set(ri, map);
+      loaded += map.size;
+    }
+  }
+  if (loaded) {
+    console.log(`[scan] preloaded expiry index: ${loaded.toLocaleString()} domains`);
+  }
+}
+
+function preloadConfirmed() {
+  let loaded = 0;
+  for (let ri = 0; ri < Math.ceil(TOTAL / RANGE); ri++) {
+    const set = loadConfirmedRange(ri);
+    if (set.size) {
+      confirmedByRange.set(ri, set);
+      loaded += set.size;
+    }
+  }
+  if (loaded) {
+    console.log(`[scan] preloaded confirmed index: ${loaded.toLocaleString()} domains`);
+  }
+}
+
 function isRegisteredIn(n) {
   const set = registeredByRange.get(rangeIndex(n));
   return !!set && set.has(n);
@@ -139,30 +224,92 @@ function preloadRegistered() {
   }
 }
 
-function save(prog) {
-  writeFileSync(`${PROGRESS_FILE}.tmp`, JSON.stringify(prog, null, 2));
-  renameSync(`${PROGRESS_FILE}.tmp`, PROGRESS_FILE);
-  for (const ri of dirtyRanges) {
-    const nums = [...(availByRange.get(ri) || [])].sort((a, b) => a - b);
-    const lines =
-      nums.map((n) => `${String(n).padStart(6, '0')}.${TLD}`).join('\n') +
-      (nums.length ? '\n' : '');
-    const f = rangeFile(ri);
-    writeFileSync(`${f}.tmp`, lines);
-    renameSync(`${f}.tmp`, f);
+function addExpiry(n, expiry) {
+  const ri = rangeIndex(n);
+  let map = expiryByRange.get(ri);
+  if (!map) {
+    map = loadExpiryRange(ri);
+    expiryByRange.set(ri, map);
   }
-  dirtyRanges.clear();
-  for (const ri of dirtyRegisteredRanges) {
-    const nums = [...(registeredByRange.get(ri) || [])].sort((a, b) => a - b);
-    const lines =
-      nums.map((n) => `${String(n).padStart(6, '0')}.${TLD}`).join('\n') +
-      (nums.length ? '\n' : '');
-    const f = registeredFile(ri);
-    writeFileSync(`${f}.tmp`, lines);
-    renameSync(`${f}.tmp`, f);
-  }
-  dirtyRegisteredRanges.clear();
+  map.set(n, expiry);
+  dirtyExpiryRanges.add(ri);
 }
+
+function addConfirmed(n) {
+  const ri = rangeIndex(n);
+  let set = confirmedByRange.get(ri);
+  if (!set) {
+    set = new Set(loadConfirmedRange(ri));
+    confirmedByRange.set(ri, set);
+  }
+  set.add(n);
+  dirtyConfirmedRanges.add(ri);
+}
+
+function isExpiringSoon(n, today) {
+  const ri = rangeIndex(n);
+  const map = expiryByRange.get(ri);
+  if (!map) return false;
+  const expiry = map.get(n);
+  if (!expiry) return false;
+  const expiryDate = new Date(expiry);
+  const daysUntil = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  return daysUntil <= SOON_EXPIRY_DAYS && daysUntil >= 0;
+}
+
+function isExpired(n, today) {
+  const ri = rangeIndex(n);
+  const map = expiryByRange.get(ri);
+  if (!map) return false;
+  const expiry = map.get(n);
+  if (!expiry) return false;
+  return new Date(expiry) < today;
+}
+
+  function save(prog) {
+    writeFileSync(`${PROGRESS_FILE}.tmp`, JSON.stringify(prog, null, 2));
+    renameSync(`${PROGRESS_FILE}.tmp`, PROGRESS_FILE);
+    for (const ri of dirtyRanges) {
+      const nums = [...(availByRange.get(ri) || [])].sort((a, b) => a - b);
+      const lines =
+        nums.map((n) => `${String(n).padStart(6, '0')}.${TLD}`).join('\n') +
+        (nums.length ? '\n' : '');
+      const f = rangeFile(ri);
+      writeFileSync(`${f}.tmp`, lines);
+      renameSync(`${f}.tmp`, f);
+    }
+    dirtyRanges.clear();
+    for (const ri of dirtyRegisteredRanges) {
+      const nums = [...(registeredByRange.get(ri) || [])].sort((a, b) => a - b);
+      const lines =
+        nums.map((n) => `${String(n).padStart(6, '0')}.${TLD}`).join('\n') +
+        (nums.length ? '\n' : '');
+      const f = registeredFile(ri);
+      writeFileSync(`${f}.tmp`, lines);
+      renameSync(`${f}.tmp`, f);
+    }
+    dirtyRegisteredRanges.clear();
+    for (const ri of dirtyExpiryRanges) {
+      const map = expiryByRange.get(ri);
+      if (!map || map.size === 0) continue;
+      const lines = [...map.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([n, exp]) => `${String(n).padStart(6, '0')}.${TLD}\t${exp ?? ''}`)
+        .join('\n') + '\n';
+      const f = expiryFile(ri);
+      writeFileSync(`${f}.tmp`, lines);
+      renameSync(`${f}.tmp`, f);
+    }
+    dirtyExpiryRanges.clear();
+    for (const ri of dirtyConfirmedRanges) {
+      const nums = [...(confirmedByRange.get(ri) || [])].sort((a, b) => a - b);
+      const lines = nums.map((n) => `${String(n).padStart(6, '0')}.${TLD}`).join('\n') + '\n';
+      const f = confirmedFile(ri);
+      writeFileSync(`${f}.tmp`, lines);
+      renameSync(`${f}.tmp`, f);
+    }
+    dirtyConfirmedRanges.clear();
+  }
 
 function cleanupHistory() {
   if (!DO_COMMIT) return;
@@ -250,12 +397,161 @@ async function dnsCheck(name) {
   }
 }
 
+// 增强 DNS 检查 - 使用多种记录类型交叉验证 (参考 web-check-zh)
+async function enhancedDnsCheck(name) {
+  const promises = [
+    dns.resolve4(name).catch(() => null),
+    dns.resolveNS(name).catch(() => null),
+    dns.resolveSOA(name).catch(() => null),
+  ];
+  
+  const [aRecords, nsRecords, soaRecord] = await Promise.all(promises);
+  
+  // 如果有 A 记录或 NS 记录，域名已注册
+  if (aRecords && aRecords.length > 0) return 'registered';
+  if (nsRecords && nsRecords.length > 0) return 'registered';
+  if (soaRecord) return 'registered';
+  
+  // 如果所有查询都失败或返回空，可能是 NXDOMAIN
+  return 'available';
+}
+
+// WHOIS TCP 查询 (参考 web-check-zh 的 Internic WHOIS)
+function whoisCheckSync(domain) {
+  return new Promise((resolve) => {
+    const client = net.createConnection({ port: 43, host: 'whois.internic.net' }, () => {
+      client.write(domain + '\r\n');
+    });
+    
+    let data = '';
+    client.on('data', (chunk) => {
+      data += chunk;
+    });
+    
+    client.on('end', () => {
+      // 解析 WHOIS 响应
+      if (data.includes('No match for') || data.includes('NOT FOUND')) {
+        resolve('available');
+      } else if (data.includes('status: free') || data.includes('unregistered')) {
+        resolve('available');
+      } else if (data.includes('registration date') || data.includes('expiry date') || data.includes('registrar')) {
+        resolve('registered');
+      } else {
+        // 无法确定，返回 error
+        resolve('error');
+      }
+      client.destroy();
+    });
+    
+    client.on('error', (err) => {
+      resolve('error');
+    });
+    
+    // 超时处理
+    setTimeout(() => {
+      client.destroy();
+      resolve('error');
+    }, 3000);
+  });
+}
+
+// 解析 WHOIS 响应中的到期日期
+function parseWhoisExpiry(whoisData) {
+  if (!whoisData) return null;
+  
+  // 尝试多种日期格式
+  const patterns = [
+    /Expiration Date:\s*([^\r\n]+)/i,
+    /Expiry Date:\s*([^\r\n]+)/i,
+    /Registry Expiry Date:\s*([^\r\n]+)/i,
+    /expire[dt?d]*:\s*([^\r\n]+)/i,
+    /paid-till:\s*([^\r\n]+)/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = whoisData.match(pattern);
+    if (match?.[1]) {
+      const dateStr = match[1].trim();
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().slice(0, 10);
+      }
+    }
+  }
+  return null;
+}
+
+function parseExpiry(data) {
+  if (!data || typeof data !== 'object') return null;
+  try {
+    // Try multiple event actions for expiry (Web-Check pattern)
+    const expiryActions = [
+      'expiration',
+      'registration expiration',
+      'registration_expiration',
+      'registry expiry',
+      ' expiry'
+    ];
+    const events = data.events ?? [];
+    for (const action of expiryActions) {
+      const ev = events.find((e) => e.eventAction === action);
+      if (ev?.eventDate) {
+        const d = new Date(ev.eventDate);
+        if (!Number.isNaN(d.getTime())) {
+          return d.toISOString().slice(0, 10);
+        }
+      }
+    }
+    // Fallback: check for expiry in other fields
+    if (data.expirationDate) {
+      const d = new Date(data.expirationDate);
+      if (!Number.isNaN(d.getTime())) {
+        return d.toISOString().slice(0, 10);
+      }
+    }
+  } catch {
+    // parse failure is non-fatal
+  }
+  return null;
+}
+
+function parseRegistrar(data) {
+  if (!data || typeof data !== 'object') return null;
+  try {
+    // Try to extract registrar from entities (Web-Check vCard pattern)
+    const entities = data.entities ?? [];
+    for (const entity of entities) {
+      const roles = entity.roles ?? [];
+      if (roles.includes('registrar')) {
+        const vcard = entity.vcardArray;
+        if (vcard && Array.isArray(vcard[1])) {
+          const fnEntry = vcard[1].find((f) => Array.isArray(f) && f[0] === 'fn');
+          if (fnEntry?.[3]) return fnEntry[3];
+          if (fnEntry?.[2]) return fnEntry[2];
+        }
+        if (entity.handle) return entity.handle;
+      }
+    }
+    // Fallback: check top-level registrar field
+    if (data.handle) return data.handle;
+  } catch {
+    // parse failure is non-fatal
+  }
+  return null;
+}
+
+// Enhanced RDAP check with comprehensive parsing and multiple endpoints
 async function rdapCheck(full) {
-  for (const url of [
+  const endpoints = [
     `https://rdap.centralnic.com/xyz/domain/${full}`,
     `https://rdap.zdnsgtld.com/xyz/domain/${full}`,
     `https://rdap.org/domain/${full}`,
-  ]) {
+    `https://registry.google/rdap/domain/${full}`,
+  ];
+  
+  let lastError = null;
+  
+  for (const url of endpoints) {
     try {
       const ac = new AbortController();
       const t = setTimeout(() => ac.abort(), RDAP_TIMEOUT_MS);
@@ -263,27 +559,102 @@ async function rdapCheck(full) {
         const res = await fetch(url, {
           signal: ac.signal,
           redirect: 'follow',
-          headers: { accept: 'application/rdap+json, application/json' },
+          headers: { 
+            accept: 'application/rdap+json, application/json',
+            'User-Agent': 'domain-checker/1.0'
+          },
         });
-        if (res.status === 404) return 'available';
-        if (res.status === 200) return 'registered';
+        
+        if (res.status === 404) {
+          return { status: 'available', expiry: null, registrar: null };
+        }
+        
+        if (res.status === 200) {
+          const data = await res.json().catch(() => null);
+          if (data) {
+            const expiry = parseExpiry(data);
+            const registrar = parseRegistrar(data);
+            return { status: 'registered', expiry, registrar };
+          }
+        }
+        
+        // Handle other status codes (redirects, errors)
+        if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+          // Follow redirect manually
+          const redirectUrl = res.headers.get('location');
+          const redirectRes = await fetch(redirectUrl, {
+            headers: { accept: 'application/rdap+json' },
+            redirect: 'manual'
+          });
+          if (redirectRes.status === 200) {
+            const data = await redirectRes.json().catch(() => null);
+            if (data) {
+              return { 
+                status: 'registered', 
+                expiry: parseExpiry(data),
+                registrar: parseRegistrar(data)
+              };
+            }
+          }
+        }
       } finally {
         clearTimeout(t);
       }
-    } catch {
-      // 下一个端点
+    } catch (err) {
+      lastError = err;
+      continue;
     }
   }
-  return 'error';
+  
+  // All endpoints failed
+  console.log(`[scan] RDAP all failed for ${full}: ${(lastError?.message || 'unknown error')}`);
+  return { status: 'error', expiry: null, registrar: null };
 }
 
 async function checkOne(n) {
   const full = `${String(n).padStart(6, '0')}.${TLD}`;
-  const s = await dnsCheck(full);
-  // DNS 无 NS 记录（NXDOMAIN）并不等于未注册——已注册但未配置解析器同样无 NS。
-  // 只有 Register 局 RDAP 返回 404 才真正可注册；DNS 200（有 NS）直接判已注册。
-  if (s === 'registered') return s;
-  return rdapCheck(full);
+  
+  // 并行执行多种检查方法，提升准确性 (参考 web-check-zh)
+  const [dnsResult, enhancedDnsResult] = await Promise.all([
+    dnsCheck(full),
+    enhancedDnsCheck(full).catch(() => 'error')
+  ]);
+  
+  // DNS 检查 - 如果两个 DNS 结果一致，直接返回
+  if (dnsResult === 'registered' && enhancedDnsResult === 'registered') {
+    // 两个 DNS 都确认已注册，使用 RDAP 获取详细信息
+    const rdapResult = await rdapCheck(full);
+    if (rdapResult.status === 'registered') {
+      return rdapResult;
+    }
+    return { status: 'registered', expiry: null, registrar: null };
+  }
+  
+  if (dnsResult === 'available' && enhancedDnsResult === 'available') {
+    // 两个 DNS 都确认可用，进行 RDAP 确认
+    const rdapResult = await rdapCheck(full);
+    if (rdapResult.status === 'available') {
+      return rdapResult;
+    }
+    // RDAP 说已注册但 DNS 说可用，以 RDAP 为准
+    return rdapResult;
+  }
+  
+  // DNS 结果不一致，使用 RDAP 作为最终裁决
+  const rdapResult = await rdapCheck(full);
+  if (rdapResult.status !== 'error') {
+    return rdapResult;
+  }
+  
+  // RDAP 也失败，尝试 WHOIS TCP 查询作为最后手段
+  const whoisResult = await whoisCheckSync(full).catch(() => 'error');
+  if (whoisResult === 'registered') {
+    return { status: 'registered', expiry: null, registrar: null };
+  } else if (whoisResult === 'available') {
+    return { status: 'available', expiry: null, registrar: null };
+  }
+  
+  return { status: 'error', expiry: null, registrar: null };
 }
 
 async function withTimeout(p, ms) {
@@ -311,6 +682,9 @@ function makeProgress(next, completed) {
       available: totalAvailable,
       registered: totalRegistered,
       unknown: totalUnknown,
+      expiring: totalExpiring,
+      expired: totalExpired,
+      confirmed: totalConfirmed,
     },
   };
 }
@@ -320,18 +694,30 @@ let globalStartedAt = Date.now();
 async function main() {
   mkdirSync(AVAIL_DIR, { recursive: true });
   mkdirSync(REG_DIR, { recursive: true });
+  mkdirSync(EXPIRY_DIR, { recursive: true });
+  mkdirSync(CONFIRMED_DIR, { recursive: true });
   console.log(`[scan] env: TOTAL=${TOTAL} START=${START} CONCURRENCY=${CONCURRENCY} COMMIT_EVERY=${COMMIT_EVERY} DO_COMMIT=${DO_COMMIT} DEBUG=${DEBUG} FORCE=${FORCE}`);
   const prog = loadJson(PROGRESS_FILE, null);
   let next = prog && typeof prog.next === 'number' ? prog.next : START;
 
   preloadRegistered();
+  preloadExpiry();
+  preloadConfirmed();
+
+  // 计算已过期但未标记的域名
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   if (prog && prog.completed && (prog.total || TOTAL) >= TOTAL) {
     const age = Date.now() - (prog.completedAt || 0);
     if (!FORCE && age < FRESH_MS) {
       console.log(
-        `[scan] completed ${Math.round(age / 3600000)}h ago, still fresh (next cycle after 24h)`
+        `[scan] completed ${Math.round(age / 3600000)}h ago, still fresh (next cycle after ${FRESH_HOURS}h)`
       );
+      // 检查已过期域名是否需要重新检测
+      if (FORCE || age > FRESH_MS) {
+        checkExpiredDomains();
+      }
       return;
     }
     console.log('[scan] incremental cycle: re-check available + unknown, skip registered');
@@ -388,9 +774,10 @@ async function main() {
 
     for (let i = 0; i < batch; i++) {
       const n = next + i;
-      const s = results.get(n);
-      if (s === undefined) continue;
-      if (s === 'available') {
+      const r = results.get(n);
+      if (r === undefined) continue;
+      
+      if (r.status === 'available') {
         totalAvailable++;
         const ri = rangeIndex(n);
         let set = availByRange.get(ri);
@@ -400,11 +787,33 @@ async function main() {
         }
         set.add(n);
         dirtyRanges.add(ri);
-      } else if (s === 'registered') {
+        // Track confirmed available domains
+        if (!confirmedByRange.get(ri)?.has(n)) {
+          addConfirmed(n);
+          totalConfirmed++;
+        }
+      } else if (r.status === 'registered') {
         totalRegistered++;
         addRegistered(n);
+        if (r.expiry) {
+          addExpiry(n, r.expiry);
+          const expiryDate = new Date(r.expiry);
+          const daysUntil = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysUntil <= SOON_EXPIRY_DAYS && daysUntil >= 0) {
+            totalExpiring++;
+          }
+        }
+        // Track confirmed registered domains
+        if (!confirmedByRange.get(rangeIndex(n))?.has(n)) {
+          addConfirmed(n);
+          totalConfirmed++;
+        }
       } else {
         totalUnknown++;
+        // Log unknown domains for potential re-check
+        if (DEBUG) {
+          console.log(`[scan] unknown domain: ${n}.${TLD}, will retry in next cycle`);
+        }
       }
     }
 
@@ -412,9 +821,9 @@ async function main() {
     sinceCommit += batch;
 
     if (next >= nextLog) {
-      console.log(
-        `[scan] progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()} avail=${totalAvailable.toLocaleString()} reg=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unk=${totalUnknown.toLocaleString()}`
-      );
+  console.log(
+    `[scan] progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()} avail=${totalAvailable.toLocaleString()} reg=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unk=${totalUnknown.toLocaleString()} expiring=${totalExpiring.toLocaleString()} confirmed=${totalConfirmed.toLocaleString()}`
+  );
       nextLog += 20000;
     }
 
@@ -434,9 +843,66 @@ async function main() {
     `scan complete: ${totalAvailable.toLocaleString()} available domains (${TLD})`
   );
   console.log(
-    `[scan] DONE. available=${totalAvailable.toLocaleString()} registered=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unknown=${totalUnknown.toLocaleString()} queries=${queriedCount.toLocaleString()}`
+    `[scan] DONE. available=${totalAvailable.toLocaleString()} registered=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unknown=${totalUnknown.toLocaleString()} queries=${queriedCount.toLocaleString()} confirmed=${totalConfirmed.toLocaleString()}`
   );
   cleanupHistory();
+}
+
+// 检查已过期域名的续费状态
+async function checkExpiredDomains() {
+  console.log('[scan] checking expired domains for re-registration...');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let checked = 0;
+  let movedToAvailable = 0;
+  let stillRegistered = 0;
+
+  for (const ri of [...expiryByRange.keys()].sort((a, b) => a - b)) {
+    const map = expiryByRange.get(ri);
+    if (!map) continue;
+
+    for (const [nStr, expiry] of map.entries()) {
+      const n = parseInt(nStr.split('.')[0], 10);
+      if (!expiry || isNaN(n)) continue;
+
+      const expiryDate = new Date(expiry);
+      if (expiryDate >= today) continue; // 未过期
+
+      const full = `${nStr}.${TLD}`;
+      checked++;
+
+      try {
+        const result = await withTimeout(rdapCheck(full), 15000);
+        if (result.status === 'available') {
+          // 域名已过期且未续费,移入 available
+          movedToAvailable++;
+          const set = availByRange.get(ri) || new Set();
+          set.add(n);
+          availByRange.set(ri, set);
+          dirtyRanges.add(ri);
+          // 从 expiry 中移除
+          map.delete(n);
+          addConfirmed(n);
+        } else if (result.status === 'registered') {
+          // 已续费,保持 registered
+          stillRegistered++;
+          addConfirmed(n);
+        }
+      } catch (e) {
+        console.error(`[scan] error checking expired domain ${full}:`, e.message);
+      }
+
+      // 每检查 1000 个保存一次
+      if (checked % 1000 === 0) {
+        console.log(`[scan] expired check: ${checked} checked, ${movedToAvailable} moved to available, ${stillRegistered} still registered`);
+        save(makeProgress(next, false));
+      }
+    }
+  }
+
+  console.log(
+    `[scan] expired check done: ${checked} checked, ${movedToAvailable} moved to available, ${stillRegistered} still registered`
+  );
 }
 
 main().catch((e) => {
