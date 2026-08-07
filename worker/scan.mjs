@@ -253,6 +253,7 @@ async function dnsCheck(name) {
 async function rdapCheck(full) {
   for (const url of [
     `https://rdap.centralnic.com/xyz/domain/${full}`,
+    `https://rdap.zdnsgtld.com/xyz/domain/${full}`,
     `https://rdap.org/domain/${full}`,
   ]) {
     try {
@@ -279,7 +280,9 @@ async function rdapCheck(full) {
 async function checkOne(n) {
   const full = `${String(n).padStart(6, '0')}.${TLD}`;
   const s = await dnsCheck(full);
-  if (s !== 'error') return s;
+  // DNS 无 NS 记录（NXDOMAIN）并不等于未注册——已注册但未配置解析器同样无 NS。
+  // 只有 Register 局 RDAP 返回 404 才真正可注册；DNS 200（有 NS）直接判已注册。
+  if (s === 'registered') return s;
   return rdapCheck(full);
 }
 
@@ -377,7 +380,7 @@ async function main() {
           const n = tasks[idx++];
           results.set(
             n,
-            await withTimeout(checkOne(n), 8000).catch(() => 'error')
+            await withTimeout(checkOne(n), 15000).catch(() => 'error')
           );
         }
       })

@@ -48,7 +48,7 @@ async function dohCheck(full: string): Promise<ScanStatus> {
         const data = await res.json();
         const status = data.Status;
         if (status === 0) return 'registered';
-        if (status === 3) return 'available';
+        if (status === 3) return rdapConfirm(full);
       } finally {
         clearTimeout(timer);
       }
@@ -57,13 +57,25 @@ async function dohCheck(full: string): Promise<ScanStatus> {
     }
   }
   try {
-    const res = await fetch(`https://rdap.org/domain/${full}`, {
-      redirect: 'follow',
-    });
-    if (res.status === 404) return 'available';
-    if (res.status === 200) return 'registered';
+    return await rdapConfirm(full);
   } catch {
     // 忽略
+  }
+  return 'unknown';
+}
+
+// NXDOMAIN 不代表未注册——已注册但未配置 NS 的域名同样无 NS 记录。
+// 必须以注册局 RDAP（404=可注册）做最终确认。
+async function rdapConfirm(full: string): Promise<ScanStatus> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(
+      attempt === 0
+        ? `https://rdap.centralnic.com/xyz/domain/${full}`
+        : `https://rdap.org/domain/${full}`,
+      { redirect: 'follow' }
+    );
+    if (res.status === 404) return 'available';
+    if (res.status === 200) return 'registered';
   }
   return 'unknown';
 }
