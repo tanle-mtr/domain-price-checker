@@ -13,6 +13,7 @@ export interface WhoisInfo {
   nameservers?: string[] | null;
   status?: string[] | null;
   registryDomainId?: string | null;
+  rawText?: string | null;
 }
 
 export interface AvailabilityResult {
@@ -21,7 +22,7 @@ export interface AvailabilityResult {
   status: AvailabilityStatus;
   registrar?: string | null;
   expiry?: string | null;
-  source: "rdap" | "dns" | "none";
+  source: "rdap" | "dns" | "whois" | "fallback";
   error?: string | null;
   whois?: WhoisInfo | null;
 }
