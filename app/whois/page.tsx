@@ -243,11 +243,11 @@ export default function WhoisPage() {
               )}
 
               {/* Status */}
-              {result.parsed.status && result.parsed.status.length > 0 && (
+              {result.parsed?.status && (
                 <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
                   <span className="text-xs text-slate-500 dark:text-slate-400">域名状态</span>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {result.parsed.status.map((s, i) => (
+                    {(Array.isArray(result.parsed.status) ? result.parsed.status : [result.parsed.status]).map((s: string, i: number) => (
                       <span
                         key={i}
                         className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
