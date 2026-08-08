@@ -9,6 +9,14 @@ interface Props {
   rate: number;
 }
 
+function getDaysUntilExpiry(expiryDate: string | null | undefined): number | null {
+  if (!expiryDate) return null;
+  const days = Math.ceil(
+    (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  );
+  return days;
+}
+
 export default function ResultSection({ results, currency, rate }: Props) {
   if (!results || results.length === 0) {
     return null;
@@ -16,166 +24,185 @@ export default function ResultSection({ results, currency, rate }: Props) {
 
   return (
     <section className="mt-8 space-y-4">
-      {results.map((r) => (
-        <div
-          key={r.full}
-          className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-        >
-          {/* 域名标题 */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <span className="text-xl font-bold">{r.full}</span>
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  r.status === 'available'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                }`}
-              >
-                {r.status === 'available' ? '可注册' : '已注册'}
-              </span>
+      {results.map((r) => {
+        const daysLeft = getDaysUntilExpiry(r.whois?.expiryDate);
+        
+        return (
+          <div
+            key={r.full}
+            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          >
+            {/* 域名标题 */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-bold">{r.full}</span>
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    r.status === 'available'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                  }`}
+                >
+                  {r.status === 'available' ? '可注册' : '已注册'}
+                </span>
+              </div>
+              {r.registrar && (
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                  {r.registrar}
+                  {r.expiry && ` · 到期: ${r.expiry}`}
+                </span>
+              )}
             </div>
-            {r.registrar && (
-              <span className="text-sm text-slate-500 dark:text-slate-400">
-                {r.registrar}
-                {r.expiry && ` · 到期: ${r.expiry}`}
-              </span>
+
+            {/* 可注册：显示价格表 */}
+            {r.status === 'available' && (
+              <div>
+                <p className="text-xs text-slate-500 mb-3">
+                  ⓘ 价格为参考价，实际价格以注册商结算页为准
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400">
+                        <th className="py-2 text-left pr-4">注册商</th>
+                        <th className="py-2 text-left pr-4">首年</th>
+                        <th className="py-2 text-left pr-4">续费</th>
+                        <th className="py-2 text-left pr-4">两年合计</th>
+                        <th className="py-2 text-left pr-4">WHOIS 保护</th>
+                        <th className="py-2 text-left">购买</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {REGISTRARS.filter(reg => !reg.excludeTlds?.includes(r.tld)).map((reg) => {
+                        const cheapest = cheapestFirstYear(r.tld)?.registrar === reg.registrar;
+                        return (
+                          <tr key={reg.registrar} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                            <td className="py-3 pr-4">
+                              <span className="font-medium">{reg.registrar}</span>
+                              {cheapest && (
+                                <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded dark:bg-blue-900/30 dark:text-blue-300">
+                                  最便宜
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 pr-4">{formatPrice(reg.firstYear, currency, rate)}</td>
+                            <td className="py-3 pr-4">{formatPrice(reg.renewal, currency, rate)}</td>
+                            <td className="py-3 pr-4">{formatPrice(reg.firstYear + reg.renewal, currency, rate)}</td>
+                            <td className="py-3 pr-4">
+                              {reg.whoisProtection > 0
+                                ? `${formatPrice(reg.whoisProtection, currency, rate)}/年`
+                                : <span className="text-emerald-600 dark:text-emerald-400">免费</span>}
+                            </td>
+                            <td className="py-3">
+                              <a
+                                href={checkoutUrl(reg, r.full)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-600 hover:underline dark:text-blue-400 font-medium"
+                              >
+                                去购买 →
+                              </a>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 已注册：显示 WHOIS 信息 */}
+            {r.status !== 'available' && (
+              <div className="space-y-3">
+                <div className="p-4 bg-slate-50 rounded-lg dark:bg-slate-800">
+                  <h3 className="font-medium text-slate-700 dark:text-slate-200 mb-3">
+                    WHOIS 信息
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    {r.whois?.registrar && (
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400">注册商：</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-200">
+                          {r.whois.registrar}
+                        </span>
+                      </div>
+                    )}
+                    {r.whois?.creationDate && (
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400">创建日期：</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-200">
+                          {r.whois.creationDate}
+                        </span>
+                      </div>
+                    )}
+                    {r.whois?.expiryDate && (
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400">到期日期：</span>
+                        <span className={`font-medium ${
+                          daysLeft !== null && daysLeft < 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-slate-700 dark:text-slate-200'
+                        }`}>
+                          {r.whois.expiryDate}
+                        </span>
+                        {daysLeft !== null && daysLeft < 0 && (
+                          <span className="ml-1 text-xs text-red-500">
+                            （已过期{Math.abs(daysLeft)}天）
+                          </span>
+                        )}
+                        {daysLeft !== null && daysLeft >= 0 && daysLeft < 30 && (
+                          <span className="ml-1 text-xs text-orange-500">
+                            （即将到期）
+                          </span>
+                        )}
+                        {daysLeft !== null && daysLeft >= 30 && (
+                          <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                            （剩余{daysLeft}天）
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {r.whois?.updatedDate && (
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400">更新日期：</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-200">
+                          {r.whois.updatedDate}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {r.whois?.nameservers && r.whois.nameservers.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                      <span className="text-slate-500 dark:text-slate-400 text-sm">Nameservers：</span>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {r.whois.nameservers.slice(0, 5).map((ns, i) => (
+                          <span key={i} className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-700 dark:text-slate-300">
+                            {ns}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                    <Link
+                      href={`/whois?domain=${encodeURIComponent(r.full)}`}
+                      className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      查询完整 WHOIS 信息
+                    </Link>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-
-          {/* 可注册：显示价格表 */}
-          {r.status === 'available' && (
-            <div>
-              <p className="text-xs text-slate-500 mb-3">
-                ⓘ 价格为参考价，实际价格以注册商结算页为准
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400">
-                      <th className="py-2 text-left pr-4">注册商</th>
-                      <th className="py-2 text-left pr-4">首年</th>
-                      <th className="py-2 text-left pr-4">续费</th>
-                      <th className="py-2 text-left pr-4">两年合计</th>
-                      <th className="py-2 text-left pr-4">WHOIS 保护</th>
-                      <th className="py-2 text-left">购买</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {REGISTRARS.filter(reg => !reg.excludeTlds?.includes(r.tld)).map((reg) => {
-                      const cheapest = cheapestFirstYear(r.tld)?.registrar === reg.registrar;
-                      return (
-                        <tr key={reg.registrar} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
-                          <td className="py-3 pr-4">
-                            <span className="font-medium">{reg.registrar}</span>
-                            {cheapest && (
-                              <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded dark:bg-blue-900/30 dark:text-blue-300">
-                                最便宜
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 pr-4">{formatPrice(reg.firstYear, currency, rate)}</td>
-                          <td className="py-3 pr-4">{formatPrice(reg.renewal, currency, rate)}</td>
-                          <td className="py-3 pr-4">{formatPrice(reg.firstYear + reg.renewal, currency, rate)}</td>
-                          <td className="py-3 pr-4">
-                            {reg.whoisProtection > 0
-                              ? `${formatPrice(reg.whoisProtection, currency, rate)}/年`
-                              : <span className="text-emerald-600 dark:text-emerald-400">免费</span>}
-                          </td>
-                          <td className="py-3">
-                            <a
-                              href={checkoutUrl(reg, r.full)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline dark:text-blue-400 font-medium"
-                            >
-                              去购买 →
-                            </a>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* 已注册：显示 WHOIS 信息 */}
-          {r.status !== 'available' && (
-            <div className="space-y-3">
-              <div className="p-4 bg-slate-50 rounded-lg dark:bg-slate-800">
-                <h3 className="font-medium text-slate-700 dark:text-slate-200 mb-3">
-                  WHOIS 信息
-                </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  {r.whois?.registrar && (
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400">注册商：</span>
-                      <span className="font-medium text-slate-700 dark:text-slate-200">
-                        {r.whois.registrar}
-                      </span>
-                    </div>
-                  )}
-                  {r.whois?.creationDate && (
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400">创建日期：</span>
-                      <span className="font-medium text-slate-700 dark:text-slate-200">
-                        {r.whois.creationDate}
-                      </span>
-                    </div>
-                  )}
-                  {r.whois?.expiryDate && (
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400">到期日期：</span>
-                      <span className={`font-medium ${
-                        new Date(r.whois.expiryDate) < new Date()
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-slate-700 dark:text-slate-200'
-                      }`}>
-                        {r.whois.expiryDate}
-                      </span>
-                    </div>
-                  )}
-                  {r.whois?.updatedDate && (
-                    <div>
-                      <span className="text-slate-500 dark:text-slate-400">更新日期：</span>
-                      <span className="font-medium text-slate-700 dark:text-slate-200">
-                        {r.whois.updatedDate}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                
-                {r.whois?.nameservers && r.whois.nameservers.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-                    <span className="text-slate-500 dark:text-slate-400 text-sm">Nameservers：</span>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {r.whois.nameservers.slice(0, 5).map((ns, i) => (
-                        <span key={i} className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-700 dark:text-slate-300">
-                          {ns}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-                  <Link
-                    href={`/whois?domain=${encodeURIComponent(r.full)}`}
-                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    查询完整 WHOIS 信息
-                  </Link>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </section>
   );
 }

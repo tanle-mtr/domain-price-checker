@@ -244,7 +244,6 @@ function normalizeWhoisKey(
   ) {
     const ns = value.trim();
     if (ns) {
-      const existing = (parsed.nameservers as string[] | undefined) || [];
       return { key: "nameservers", value: ns };
     }
   }
