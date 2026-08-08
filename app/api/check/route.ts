@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { domainToASCII } from "node:url";
-import { checkAvailability } from "@/lib/rdap";
+import { checkDomain } from "@/lib/rdap";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -39,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   const results = await Promise.all(
-    uniqueTlds.map((tld) => checkAvailability(rawName, tld))
+    uniqueTlds.map((tld) => checkDomain(rawName, tld))
   );
 
   return NextResponse.json({ name: rawName, results });

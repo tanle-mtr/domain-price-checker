@@ -11,10 +11,14 @@ interface Props {
 
 function getDaysUntilExpiry(expiryDate: string | null | undefined): number | null {
   if (!expiryDate) return null;
-  const days = Math.ceil(
-    (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  );
-  return days;
+  try {
+    const days = Math.ceil(
+      (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    );
+    return days;
+  } catch {
+    return null;
+  }
 }
 
 export default function ResultSection({ results, currency, rate }: Props) {
