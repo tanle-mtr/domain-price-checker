@@ -400,98 +400,109 @@ export async function checkAvailability(
   name: string,
   tld: string
 ): Promise<AvailabilityResult> {
-  const full = domainToASCII(`${name}.${tld}`).toLowerCase();
+  try {
+    const full = domainToASCII(`${name}.${tld}`).toLowerCase();
 
-  // 1. 尝试 RDAP
-  const endpoints = [
-    `https://rdap.org/domain/${full}`,
-    ...(RDAP_DIRECT[tld] ?? []).map((base) => `${base}domain/${full}`),
-  ];
+    // 1. 尝试 RDAP
+    const endpoints = [
+      `https://rdap.org/domain/${full}`,
+      ...(RDAP_DIRECT[tld] ?? []).map((base) => `${base}domain/${full}`),
+    ];
 
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetchWithTimeout(endpoint, RDAP_TIMEOUT_MS);
-      if (res.status === 200) {
-        const data = await res.json().catch(() => null);
-        const { registrar, expiry, whois } = parseRdap(data);
-        return {
-          tld,
-          full,
-          status: "registered",
-          registrar: registrar ?? null,
-          expiry: expiry ?? null,
-          source: "rdap",
-          whois: whois,
-        };
+    for (const endpoint of endpoints) {
+      try {
+        const res = await fetchWithTimeout(endpoint, RDAP_TIMEOUT_MS);
+        if (res.status === 200) {
+          const data = await res.json().catch(() => null);
+          const { registrar, expiry, whois } = parseRdap(data);
+          return {
+            tld,
+            full,
+            status: "registered",
+            registrar: registrar ?? null,
+            expiry: expiry ?? null,
+            source: "rdap",
+            whois: whois,
+          };
+        }
+        if (res.status === 404) {
+          return {
+            tld,
+            full,
+            status: "available",
+            registrar: null,
+            expiry: null,
+            source: "rdap",
+          };
+        }
+      } catch {
+        // 尝试下一个端点
       }
-      if (res.status === 404) {
+    }
+
+    // 2. DNS 检查作为快速预筛选
+    let dnsResult: "registered" | "available" | null = null;
+    try {
+      const [aRecords, nsRecords] = await Promise.all([
+        resolveAny(full).then((r) => r).catch(() => []),
+        resolveNs(full).then((r) => r).catch(() => []),
+      ]);
+      if (aRecords.length > 0 || nsRecords.length > 0) {
+        dnsResult = "registered";
+      } else {
+        dnsResult = "available";
+      }
+    } catch {
+      dnsResult = null;
+    }
+
+    // 3. TCP WHOIS 作为权威确认（消除 unknown 状态）
+    const whoisServer = WHOIS_SERVERS[tld] || "whois.internic.net";
+    try {
+      const whoisData = await whoisTcpQuery(full, whoisServer);
+      const whoisStatus = parseWhoisAvailability(whoisData);
+      if (whoisStatus) {
         return {
           tld,
           full,
-          status: "available",
+          status: whoisStatus,
+          source: "whois",
           registrar: null,
           expiry: null,
-          source: "rdap",
+          whois: parseWhoisData(whoisData),
         };
       }
     } catch {
-      // 尝试下一个端点
+      // WHOIS 失败，使用 DNS 结果
     }
-  }
 
-  // 2. DNS 检查作为快速预筛选
-  let dnsResult: "registered" | "available" | null = null;
-  try {
-    const [aRecords, nsRecords] = await Promise.all([
-      resolveAny(full).then((r) => r).catch(() => []),
-      resolveNs(full).then((r) => r).catch(() => []),
-    ]);
-    if (aRecords.length > 0 || nsRecords.length > 0) {
-      dnsResult = "registered";
-    } else {
-      dnsResult = "available";
-    }
-  } catch {
-    dnsResult = null;
-  }
-
-  // 3. TCP WHOIS 作为权威确认（消除 unknown 状态）
-  const whoisServer = WHOIS_SERVERS[tld] || "whois.internic.net";
-  try {
-    const whoisData = await whoisTcpQuery(full, whoisServer);
-    const whoisStatus = parseWhoisAvailability(whoisData);
-    if (whoisStatus) {
+    // 4. 最终回退到 DNS 结果
+    if (dnsResult) {
       return {
         tld,
         full,
-        status: whoisStatus,
-        source: "whois",
-        registrar: null,
-        expiry: null,
-        whois: parseWhoisData(whoisData),
+        status: dnsResult,
+        source: "dns",
       };
     }
-  } catch {
-    // WHOIS 失败，使用 DNS 结果
-  }
 
-  // 4. 最终回退到 DNS 结果
-  if (dnsResult) {
+    // 5. 所有方法都失败，返回 available（保守策略：宁可错放不可错杀）
     return {
       tld,
       full,
-      status: dnsResult,
-      source: "dns",
+      status: "available",
+      source: "fallback",
+    };
+  } catch (error) {
+    // 捕获所有未预期的错误，返回安全默认值
+    console.error(`[checkAvailability] Error for ${name}.${tld}:`, error);
+    return {
+      tld,
+      full: domainToASCII(`${name}.${tld}`).toLowerCase(),
+      status: "available",
+      source: "error",
     };
   }
-
-  // 5. 所有方法都失败，返回 available（保守策略：宁可错放不可错杀）
-  return {
-    tld,
-    full,
-    status: "available",
-    source: "fallback",
-  };
 }
 
 /** 辅助函数：查询 NS 记录 */
