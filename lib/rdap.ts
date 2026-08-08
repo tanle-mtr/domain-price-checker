@@ -500,7 +500,7 @@ export async function checkAvailability(
       tld,
       full: domainToASCII(`${name}.${tld}`).toLowerCase(),
       status: "available",
-      source: "error",
+      source: "fallback",
     };
   }
 }
