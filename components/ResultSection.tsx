@@ -151,7 +151,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                       </span>
                       {isExpired && (
                         <span className="ml-1 text-xs text-red-500">
-                          （已过期{Math.abs(daysLeft!)}天）
+                          （已过期{daysLeft !== null ? Math.abs(daysLeft) : 0}天）
                         </span>
                       )}
                       {isSoon && (
