@@ -30,6 +30,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
             key={r.full}
             className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900/60"
           >
+            {/* 域名标题区域 */}
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3">
                 <span className="text-xl font-semibold">{r.full}</span>
@@ -47,6 +48,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
               )}
             </div>
 
+            {/* 可注册域名：显示价格对比表 */}
             {r.status === 'available' && (
               <div className="overflow-x-auto">
                 <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
@@ -118,17 +120,20 @@ export default function ResultSection({ results, currency, rate }: Props) {
               </div>
             )}
 
+            {/* 已注册域名：显示 WHOIS 信息 */}
             {r.status !== 'available' && (
               <div className="space-y-3">
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  该域名已被注册，可查看以下 WHOIS 信息了解详情。
+                  该域名已被注册
                 </p>
                 
-                {r.status === 'registered' && r.whois && (
+                {/* WHOIS 信息面板 */}
+                {r.whois && (
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
                     <h4 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
                       WHOIS 信息
                     </h4>
+                    
                     <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                       {r.whois.registrar && (
                         <div>
@@ -148,6 +153,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                           )}
                         </div>
                       )}
+                      
                       {r.whois.creationDate && (
                         <div>
                           <span className="text-slate-500 dark:text-slate-400">创建日期：</span>
@@ -156,13 +162,14 @@ export default function ResultSection({ results, currency, rate }: Props) {
                           </span>
                         </div>
                       )}
+                      
                       {r.whois.expiryDate && (
                         <div>
                           <span className="text-slate-500 dark:text-slate-400">到期日期：</span>
                           <span className={`font-medium ${
                             new Date(r.whois.expiryDate) < new Date()
                               ? 'text-red-600 dark:text-red-400'
-                              : 'font-medium text-slate-700 dark:text-slate-200'
+                              : 'text-slate-700 dark:text-slate-200'
                           }`}>
                             {new Date(r.whois.expiryDate).toLocaleDateString('zh-CN')}
                           </span>
@@ -172,10 +179,11 @@ export default function ResultSection({ results, currency, rate }: Props) {
                             );
                             if (daysLeft < 0) return <span className="ml-1 text-xs text-red-500">（已过期{Math.abs(daysLeft)}天）</span>;
                             if (daysLeft < 30) return <span className="ml-1 text-xs text-orange-500">（即将到期）</span>;
-                            return null;
+                            return <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">（剩余{daysLeft}天）</span>;
                           })()}
                         </div>
                       )}
+                      
                       {r.whois.updatedDate && (
                         <div>
                           <span className="text-slate-500 dark:text-slate-400">更新日期：</span>
@@ -184,6 +192,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                           </span>
                         </div>
                       )}
+                      
                       {r.whois.registryDomainId && (
                         <div>
                           <span className="text-slate-500 dark:text-slate-400">注册局ID：</span>
@@ -194,6 +203,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                       )}
                     </div>
                     
+                    {/* Nameservers */}
                     {r.whois.nameservers && r.whois.nameservers.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
                         <span className="text-slate-500 dark:text-slate-400">Nameservers：</span>
@@ -210,6 +220,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                       </div>
                     )}
                     
+                    {/* Status */}
                     {r.whois.status && r.whois.status.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
                         <span className="text-slate-500 dark:text-slate-400">域名状态：</span>
@@ -225,28 +236,29 @@ export default function ResultSection({ results, currency, rate }: Props) {
                         </div>
                       </div>
                     )}
-
+                    
+                    {/* WHOIS 查询按钮 */}
                     <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
-                      <a
+                      <Link
                         href={`/whois?domain=${encodeURIComponent(r.full)}`}
                         className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400"
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h6m2 4h-8m0 0l-4 4m4-4l-4-4m0 6H4m0 0l4 4m-4-4l4-4" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                         查询完整 WHOIS 信息
-                      </a>
+                      </Link>
                     </div>
                   </div>
                 )}
-
-                {/* 显示原始 WHOIS 文本（如果有） */}
+                
+                {/* 原始 WHOIS 数据 */}
                 {r.whois?.rawText && (
                   <details className="rounded-lg border border-slate-200 dark:border-slate-700">
                     <summary className="cursor-pointer px-4 py-2 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
                       查看原始 WHOIS 数据
                     </summary>
-                    <pre className="mx-4 mb-4 max-h-40 overflow-auto rounded bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                    <pre className="mx-4 mb-4 max-h-60 overflow-auto rounded bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                       {r.whois.rawText}
                     </pre>
                   </details>

@@ -24,29 +24,31 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-slate-100 text-slate-900 antialiased transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100">
-        <nav className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/70">
-          <div className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3 text-sm">
-            <Link
-              href="/"
-              className="text-base font-bold tracking-tight text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
-            >
-              域名价格查询
-            </Link>
-            <Link
-              href="/cheap"
-              className="rounded-lg px-3 py-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-400"
-            >
-              便宜域名
-            </Link>
-            <Link
-              href="/whois"
-              className="rounded-lg px-3 py-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-400"
-            >
-              WHOIS查询
-            </Link>
-            <div className="ml-auto">
-              <ThemeToggle />
+        <nav className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="text-base font-bold tracking-tight text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                域名价格查询
+              </Link>
+              <div className="hidden sm:flex items-center gap-2">
+                <Link
+                  href="/cheap"
+                  className="rounded-lg px-3 py-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+                >
+                  便宜域名
+                </Link>
+                <Link
+                  href="/whois"
+                  className="rounded-lg px-3 py-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+                >
+                  WHOIS查询
+                </Link>
+              </div>
             </div>
+            <ThemeToggle />
           </div>
         </nav>
         {children}
