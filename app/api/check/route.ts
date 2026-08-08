@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkDomain } from "@/lib/rdap";
+import { domainToASCII } from "node:url";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
