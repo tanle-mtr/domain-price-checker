@@ -9,6 +9,26 @@ interface Props {
   rate: number;
 }
 
+function safeDateCalc(expiryDate: string | null | undefined): { daysLeft: number | null; isExpired: boolean; isSoon: boolean } {
+  if (!expiryDate) {
+    return { daysLeft: null, isExpired: false, isSoon: false };
+  }
+  try {
+    const expiry = new Date(expiryDate);
+    if (isNaN(expiry.getTime())) {
+      return { daysLeft: null, isExpired: false, isSoon: false };
+    }
+    const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return {
+      daysLeft,
+      isExpired: daysLeft < 0,
+      isSoon: daysLeft >= 0 && daysLeft < 30,
+    };
+  } catch {
+    return { daysLeft: null, isExpired: false, isSoon: false };
+  }
+}
+
 export default function ResultSection({ results, currency, rate }: Props) {
   if (!results || results.length === 0) {
     return null;
@@ -18,9 +38,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
     <section className="mt-8 space-y-4">
       {results.map((r) => {
         const isAvailable = r.status === 'available';
-        const daysLeft = r.whois?.expiryDate ? Math.ceil(
-          (new Date(r.whois.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-        ) : null;
+        const { daysLeft, isExpired, isSoon } = safeDateCalc(r.whois?.expiryDate);
         
         return (
           <div
@@ -128,17 +146,23 @@ export default function ResultSection({ results, currency, rate }: Props) {
                   {r.whois?.expiryDate && (
                     <div>
                       <span className="text-slate-500 dark:text-slate-400">到期日期：</span>
-                      <span className={`font-medium ${daysLeft !== null && daysLeft < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                      <span className={`font-medium ${isExpired ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}`}>
                         {r.whois.expiryDate}
                       </span>
-                      {daysLeft !== null && daysLeft < 0 && (
-                        <span className="ml-1 text-xs text-red-500">（已过期{Math.abs(daysLeft)}天）</span>
+                      {isExpired && (
+                        <span className="ml-1 text-xs text-red-500">
+                          （已过期{Math.abs(daysLeft!)}天）
+                        </span>
                       )}
-                      {daysLeft !== null && daysLeft >= 0 && daysLeft < 30 && (
-                        <span className="ml-1 text-xs text-orange-500">（即将到期）</span>
+                      {isSoon && (
+                        <span className="ml-1 text-xs text-orange-500">
+                          （即将到期）
+                        </span>
                       )}
-                      {daysLeft !== null && daysLeft >= 30 && (
-                        <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">（剩余{daysLeft}天）</span>
+                      {!isExpired && !isSoon && daysLeft !== null && (
+                        <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                          （剩余{daysLeft}天）
+                        </span>
                       )}
                     </div>
                   )}
