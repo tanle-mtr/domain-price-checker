@@ -1,56 +1,74 @@
 import { NextResponse } from "next/server";
-import { scrapePrices, getCachedPrices, setCachedPrices } from "@/lib/price-scraper";
+import { scrapeDomainPrices, loadPriceCache } from "@/lib/price-scraper";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/**
+ * 价格爬虫 API
+ * 
+ * 工作流程�? * 1. 接收域名�?TLD
+ * 2. 先进�?WHOIS 检查（RDAP/TCP WHOIS/DNS�? * 3. 只对可用域名进行价格爬虫
+ * 4. 缓存结果�?data/prices/cache.json
+ */
 export async function POST(req: Request) {
-  let body: { tld?: unknown; force?: unknown } = {};
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-
-  const tld = String(body.tld ?? "").toLowerCase().replace(/^\./, "");
-  const force = body.force === true;
-
-  if (!tld || tld.length < 2 || tld.length > 10) {
-    return NextResponse.json({ error: "无效的 TLD" }, { status: 400 });
-  }
-
-  // 检查缓存
-  if (!force) {
-    const cached = getCachedPrices(tld);
-    if (cached) {
-      return NextResponse.json({ tld, prices: cached, fromCache: true });
+    const body = await req.json();
+    const { domain, tld } = body;
+    
+    if (!domain || !tld) {
+      return NextResponse.json(
+        { error: "缺少 domain �?tld 参数" },
+        { status: 400 }
+      );
     }
-  }
-
-  try {
-    const prices = await scrapePrices(tld);
-    setCachedPrices(tld, prices);
-    return NextResponse.json({ tld, prices, fromCache: false });
+    
+    // 调用爬虫
+    const result = await scrapeDomainPrices(domain, tld);
+    
+    return NextResponse.json({
+      domain,
+      tld,
+      status: result.status,
+      whoisChecked: result.whoisChecked,
+      prices: result.prices,
+      cache: loadPriceCache(),
+    });
   } catch (error) {
     return NextResponse.json(
-      { error: "抓取价格失败", details: error instanceof Error ? error.message : String(error) },
+      { error: "爬虫失败", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }
 }
 
+/**
+ * 查询缓存状�? */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
+  const domain = searchParams.get("domain");
   const tld = searchParams.get("tld");
   
-  if (!tld) {
-    return NextResponse.json({ error: "缺少 tld 参数" }, { status: 400 });
+  if (domain && tld) {
+    const cache = loadPriceCache();
+    const key = `${domain}.${tld}`;
+    const entry = cache[key];
+    
+    if (entry) {
+      return NextResponse.json({
+        cached: true,
+        domain,
+        tld,
+        status: entry.status,
+        whoisChecked: entry.whoisChecked,
+        updatedAt: entry.updatedAt,
+        prices: entry.prices,
+      });
+    }
   }
-
-  const cached = getCachedPrices(tld);
-  if (cached) {
-    return NextResponse.json({ tld, prices: cached, fromCache: true });
-  }
-
-  return NextResponse.json({ error: "缓存中无数据，请使用 POST 请求抓取" }, { status: 404 });
+  
+  return NextResponse.json({ cached: false });
 }
+
+
+

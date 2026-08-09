@@ -43,36 +43,47 @@ export default function ResultSection({ results, currency, rate }: Props) {
   const [scrapedPrices, setScrapedPrices] = useState<Record<string, ScrapedPrice[]>>({});
   const [loadingPrices, setLoadingPrices] = useState<Set<string>>(new Set());
 
-  // 获取实时价格
+  // 获取实时价格 - 先 WHOIS 检查，再爬虫
   useEffect(() => {
     const fetchPrices = async () => {
-      const tlds = [...new Set(results.map(r => r.tld))];
-      for (const tld of tlds) {
-        if (scrapedPrices[tld]) continue; // 已缓存
-        setLoadingPrices(prev => new Set(prev).add(tld));
+      for (const r of results) {
+        if (r.status !== 'available') continue;
+        if (scrapedPrices[r.full]) continue; // 已缓存
+        if (loadingPrices.has(r.full)) continue;
+        
+        setLoadingPrices(prev => new Set(prev).add(r.full));
         try {
-          const res = await fetch(`/api/prices?tld=${tld}`);
+          const res = await fetch('/api/scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: r.full.split('.')[0], tld: r.tld }),
+          });
           const data = await res.json();
-          if (data.prices) {
-            setScrapedPrices(prev => ({ ...prev, [tld]: data.prices }));
+          if (data.prices && data.status === 'available') {
+            setScrapedPrices(prev => ({
+              ...prev,
+              [r.full]: data.prices,
+            }));
           }
         } catch (e) {
-          console.error(`Failed to fetch prices for ${tld}:`, e);
+          console.error(`Failed to scrape price for ${r.full}:`, e);
         } finally {
           setLoadingPrices(prev => {
             const next = new Set(prev);
-            next.delete(tld);
+            next.delete(r.full);
             return next;
           });
         }
       }
     };
-    fetchPrices();
+    if (results.length > 0) {
+      fetchPrices();
+    }
   }, [results]);
 
   // 获取注册商的实时价格
-  const getScrapedPrice = (tld: string, registrar: string) => {
-    const prices = scrapedPrices[tld] || [];
+  const getScrapedPrice = (domain: string, registrar: string) => {
+    const prices = scrapedPrices[domain] || [];
     const found = prices.find(p => p.registrar === registrar);
     if (found?.success && found.firstYear) {
       return { firstYear: found.firstYear, renewal: found.renewal, source: '实时' };
@@ -119,28 +130,8 @@ export default function ResultSection({ results, currency, rate }: Props) {
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs text-slate-500">
                     ⓘ 价格为参考价，实际价格以注册商结算页为准
-                    {Object.values(loadingPrices).some(v => v) && ' - 正在刷新...'}
+                    {loadingPrices.has(r.full) && ' - 正在爬虫...'}
                   </p>
-                  <button
-                    onClick={async () => {
-                      const tlds = [...new Set(results.map(r => r.tld))];
-                      setLoadingPrices(new Set(tlds));
-                      try {
-                        for (const tld of tlds) {
-                          await fetch(`/api/prices?tld=${tld}&refresh=1`, { method: 'POST' });
-                        }
-                        setScrapedPrices({});
-                        // 重新获取价格
-                        await fetchPrices();
-                      } finally {
-                        setLoadingPrices(new Set());
-                      }
-                    }}
-                    disabled={Object.values(loadingPrices).some(v => v)}
-                    className="text-xs text-blue-600 hover:underline dark:text-blue-400 disabled:opacity-50 px-3 py-1 rounded border border-blue-200 hover:border-blue-400"
-                  >
-                    🔄 刷新价格
-                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -155,12 +146,11 @@ export default function ResultSection({ results, currency, rate }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {REGISTRARS.filter(reg => !reg.excludeTlds?.includes(results[0]?.tld)).map((reg) => {
-                        const tld = results[0]?.tld || '';
-                        const scraped = getScrapedPrice(tld, reg.registrar);
+                      {REGISTRARS.filter(reg => !reg.excludeTlds?.includes(r.tld)).map((reg) => {
+                        const scraped = getScrapedPrice(r.full, reg.registrar);
                         const firstYear = scraped?.firstYear || reg.firstYear;
                         const renewal = scraped?.renewal || reg.renewal;
-                        const cheapest = cheapestFirstYear(tld)?.registrar === reg.registrar;
+                        const cheapest = cheapestFirstYear(r.tld)?.registrar === reg.registrar;
                         return (
                           <tr key={reg.registrar} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
                             <td className="py-3 pr-4">
@@ -184,7 +174,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                             </td>
                             <td className="py-3">
                               <a
-                                href={checkoutUrl(reg, results[0]?.full || '')}
+                                href={checkoutUrl(reg, r.full)}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="text-blue-600 hover:underline dark:text-blue-400 font-medium"
