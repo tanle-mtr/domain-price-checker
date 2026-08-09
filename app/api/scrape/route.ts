@@ -5,11 +5,12 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * 价格爬虫 API
- * 
- * 工作流程�? * 1. 接收域名�?TLD
- * 2. 先进�?WHOIS 检查（RDAP/TCP WHOIS/DNS�? * 3. 只对可用域名进行价格爬虫
- * 4. 缓存结果�?data/prices/cache.json
+ * Price scraper API
+ * Workflow:
+ * 1. Accept domain and TLD
+ * 2. Check WHOIS first (RDAP/TCP WHOIS/DNS)
+ * 3. Only scrape prices for available domains
+ * 4. Cache results to data/prices/cache.json
  */
 export async function POST(req: Request) {
   try {
@@ -18,12 +19,11 @@ export async function POST(req: Request) {
     
     if (!domain || !tld) {
       return NextResponse.json(
-        { error: "缺少 domain �?tld 参数" },
+        { error: "Missing domain or tld parameter" },
         { status: 400 }
       );
     }
     
-    // 调用爬虫
     const result = await scrapeDomainPrices(domain, tld);
     
     return NextResponse.json({
@@ -36,14 +36,15 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "爬虫失败", details: error instanceof Error ? error.message : String(error) },
+      { error: "Scrape failed", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }
 }
 
 /**
- * 查询缓存状�? */
+ * Check cache status
+ */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const domain = searchParams.get("domain");
@@ -69,6 +70,4 @@ export async function GET(req: Request) {
   
   return NextResponse.json({ cached: false });
 }
-
-
 
