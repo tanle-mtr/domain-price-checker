@@ -1,0 +1,59 @@
+{
+  "unique-test-domain-123456789.com": {
+    "domain": "unique-test-domain-123456789",
+    "tld": "com",
+    "status": "available",
+    "whoisChecked": true,
+    "prices": {
+      "Porkbun": {
+        "price": null,
+        "currency": "USD",
+        "success": false,
+        "scrapedAt": 1786273981352
+      },
+      "Cloudflare": {
+        "price": null,
+        "currency": "USD",
+        "success": false,
+        "scrapedAt": 1786273981600
+      },
+      "Namecheap": {
+        "price": null,
+        "currency": "USD",
+        "success": false,
+        "scrapedAt": 1786273982103
+      },
+      "Tencent": {
+        "price": null,
+        "currency": "CNY",
+        "success": false,
+        "scrapedAt": 1786273983514
+      },
+      "Aliyun": {
+        "price": null,
+        "currency": "CNY",
+        "success": false,
+        "scrapedAt": 1786273983855
+      },
+      "Xinnet": {
+        "price": null,
+        "currency": "CNY",
+        "success": false,
+        "scrapedAt": 1786273985847
+      },
+      "West.cn": {
+        "price": null,
+        "currency": "CNY",
+        "success": false,
+        "scrapedAt": 1786273990531
+      },
+      "GoDaddy": {
+        "price": null,
+        "currency": "USD",
+        "success": false,
+        "scrapedAt": 1786273992432
+      }
+    },
+    "updatedAt": 1786273977296
+  }
+}
