@@ -142,7 +142,7 @@ export function getPrices(tld: string): ScrapedPrice[] {
 /**
  * 获取最便宜的价格
  */
-export function getCheapestPrice(tld: string, currency?: string): { registrar: string; firstYear: number } | null {
+export function getCheapestPrice(tld: string, currency?: string): { registrar: string; firstYear: number | null } | null {
   const prices = getPrices(tld);
   if (prices.length === 0) return null;
   
