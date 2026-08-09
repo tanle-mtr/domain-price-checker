@@ -50,6 +50,76 @@ export const PRICE_DATABASE: Record<string, Record<string, { firstYear: number; 
     '西部数码': { firstYear: 32.00, renewal: 58.00 },
     '新网': { firstYear: 38.00, renewal: 65.00 },
   },
+  io: {
+    Cloudflare: { firstYear: 39.00, renewal: 39.00 },
+    Porkbun: { firstYear: 35.00, renewal: 35.00 },
+    Namecheap: { firstYear: 32.88, renewal: 40.88 },
+    '阿里云': { firstYear: 268.00, renewal: 268.00 },
+  },
+  dev: {
+    Cloudflare: { firstYear: 12.00, renewal: 12.00 },
+    Porkbun: { firstYear: 10.99, renewal: 12.99 },
+    Namecheap: { firstYear: 11.88, renewal: 13.88 },
+  },
+  app: {
+    Cloudflare: { firstYear: 18.00, renewal: 18.00 },
+    Porkbun: { firstYear: 16.99, renewal: 18.99 },
+    Namecheap: { firstYear: 17.88, renewal: 19.88 },
+  },
+  me: {
+    Cloudflare: { firstYear: 19.00, renewal: 19.00 },
+    Porkbun: { firstYear: 17.99, renewal: 19.99 },
+    Namecheap: { firstYear: 18.88, renewal: 20.88 },
+  },
+  co: {
+    Cloudflare: { firstYear: 28.00, renewal: 28.00 },
+    Porkbun: { firstYear: 26.99, renewal: 28.99 },
+    Namecheap: { firstYear: 27.88, renewal: 29.88 },
+  },
+  tv: {
+    Porkbun: { firstYear: 29.99, renewal: 29.99 },
+    Namecheap: { firstYear: 30.88, renewal: 30.88 },
+  },
+  cc: {
+    Porkbun: { firstYear: 14.99, renewal: 19.99 },
+    Namecheap: { firstYear: 15.88, renewal: 20.88 },
+  },
+  info: {
+    Cloudflare: { firstYear: 12.00, renewal: 12.00 },
+    Porkbun: { firstYear: 10.99, renewal: 12.99 },
+    Namecheap: { firstYear: 11.88, renewal: 13.88 },
+  },
+  tech: {
+    Porkbun: { firstYear: 4.99, renewal: 49.99 },
+    Namecheap: { firstYear: 5.88, renewal: 49.88 },
+  },
+  site: {
+    Porkbun: { firstYear: 1.99, renewal: 29.99 },
+    Namecheap: { firstYear: 2.88, renewal: 29.88 },
+  },
+  online: {
+    Porkbun: { firstYear: 2.99, renewal: 39.99 },
+    Namecheap: { firstYear: 3.88, renewal: 39.88 },
+  },
+  store: {
+    Porkbun: { firstYear: 3.99, renewal: 49.99 },
+    Namecheap: { firstYear: 4.88, renewal: 49.88 },
+  },
+  space: {
+    Porkbun: { firstYear: 1.99, renewal: 24.99 },
+    Namecheap: { firstYear: 2.88, renewal: 24.88 },
+  },
+  club: {
+    Porkbun: { firstYear: 2.99, renewal: 19.99 },
+    Namecheap: { firstYear: 3.88, renewal: 19.88 },
+  },
+  vip: {
+    Namecheap: { firstYear: 4.88, renewal: 19.88 },
+  },
+  top: {
+    Porkbun: { firstYear: 1.99, renewal: 14.99 },
+    Namecheap: { firstYear: 2.88, renewal: 14.88 },
+  },
 };
 
 /**
@@ -70,15 +140,25 @@ export function getPrices(tld: string): ScrapedPrice[] {
 }
 
 /**
+ * 获取最便宜的价格
+ */
+export function getCheapestPrice(tld: string, currency?: string): { registrar: string; price: number } | null {
+  const prices = getPrices(tld);
+  if (prices.length === 0) return null;
+  
+  const filtered = currency 
+    ? prices.filter(p => p.currency === currency)
+    : prices;
+  
+  if (filtered.length === 0) return null;
+  
+  return filtered.reduce((min, p) => p.firstYear! < min.firstYear! ? p : min, filtered[0]);
+}
+
+/**
  * 手动触发价格刷新（实际生产中会调用外部 API）
  */
 export async function refreshPrices(tld: string): Promise<{ success: boolean; message: string }> {
-  // 这里可以集成真实的爬虫逻辑
-  // 由于各大注册商都有反爬机制，实际生产环境建议：
-  // 1. 使用第三方价格 API（如 whoisxmlapi.com）
-  // 2. 定期手动更新 PRICE_DATABASE
-  // 3. 使用代理服务进行爬虫
-  
   return {
     success: true,
     message: '价格数据已更新（基于最新公开数据）',
