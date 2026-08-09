@@ -94,6 +94,12 @@ GitHub Actions `.github/workflows/scan.yml` 定时触发（可 `workflow_dispatc
 3. 增量模式预加载上一轮已注册索引，本轮只查询未知部分
 4. 每次 commit 自动 `git reset --soft` 压缩历史，保持仓库体积恒定
 
+## 赞助支持
+
+如果这个项目对你有帮助，欢迎请我喝杯咖啡 ☕
+
+[![赞助](/public/sponsor.png)](https://s41.ax1x.com/2026/08/09/pmHHt9P.png)
+
 ## 免责声明
 
 - 价格为公开参考价快照，可能随促销 / 汇率变动，请以各注册商结算页为准
