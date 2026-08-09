@@ -19,6 +19,9 @@ on:
         required: false
         default: '100'
 
+permissions:
+  contents: write
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
