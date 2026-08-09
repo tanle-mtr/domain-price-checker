@@ -124,17 +124,22 @@ export default function ResultSection({ results, currency, rate }: Props) {
                   <button
                     onClick={async () => {
                       const tlds = [...new Set(results.map(r => r.tld))];
-                      for (const tld of tlds) {
-                        try {
+                      setLoadingPrices(new Set(tlds));
+                      try {
+                        for (const tld of tlds) {
                           await fetch(`/api/prices?tld=${tld}&refresh=1`, { method: 'POST' });
-                        } catch {}
+                        }
+                        setScrapedPrices({});
+                        // 重新获取价格
+                        await fetchPrices();
+                      } finally {
+                        setLoadingPrices(new Set());
                       }
-                      setScrapedPrices({});
                     }}
                     disabled={Object.values(loadingPrices).some(v => v)}
-                    className="text-xs text-blue-600 hover:underline dark:text-blue-400 disabled:opacity-50"
+                    className="text-xs text-blue-600 hover:underline dark:text-blue-400 disabled:opacity-50 px-3 py-1 rounded border border-blue-200 hover:border-blue-400"
                   >
-                    刷新价格
+                    🔄 刷新价格
                   </button>
                 </div>
                 <div className="overflow-x-auto">
