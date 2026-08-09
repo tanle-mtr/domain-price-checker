@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Cheerio, load } from 'cheerio';
+import * as cheerio from 'cheerio';
 
 export interface ScrapedPrice {
   registrar: string;
