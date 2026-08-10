@@ -9,7 +9,7 @@ interface ScrapedPrice {
   firstYear: number | null;
   renewal: number | null;
   currency: string;
-  source: string;
+  source: 'realtime' | 'fallback';
   success: boolean;
 }
 
@@ -62,7 +62,14 @@ export default function ResultSection({ results, currency, rate }: Props) {
           if (data.prices && data.status === 'available') {
             setScrapedPrices(prev => ({
               ...prev,
-              [r.full]: data.prices,
+              [r.full]: data.prices.map((p: any) => ({
+                registrar: p.registrar,
+                firstYear: p.price,
+                renewal: p.price ? p.price * 1.2 : null,
+                currency: p.currency,
+                source: p.source || 'fallback',
+                success: p.success || false,
+              })),
             }));
           }
         } catch (e) {
@@ -85,8 +92,8 @@ export default function ResultSection({ results, currency, rate }: Props) {
   const getScrapedPrice = (domain: string, registrar: string) => {
     const prices = scrapedPrices[domain] || [];
     const found = prices.find(p => p.registrar === registrar);
-    if (found?.success && found.firstYear) {
-      return { firstYear: found.firstYear, renewal: found.renewal, source: '实时' };
+    if (found?.success) {
+      return { firstYear: found.firstYear, renewal: found.renewal, source: found.source };
     }
     return null;
   };
@@ -130,7 +137,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs text-slate-500">
                     ⓘ 价格为参考价，实际价格以注册商结算页为准
-                    {loadingPrices.has(r.full) && ' - 正在爬虫...'}
+                    {loadingPrices.has(r.full) && ' - 正在查询价格...'}
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -155,8 +162,11 @@ export default function ResultSection({ results, currency, rate }: Props) {
                           <tr key={reg.registrar} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
                             <td className="py-3 pr-4">
                               <span className="font-medium">{reg.registrar}</span>
-                              {scraped && (
-                                <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">✓</span>
+                              {scraped?.source === 'realtime' && (
+                                <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">✓实时</span>
+                              )}
+                              {scraped?.source === 'fallback' && (
+                                <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">↺备用</span>
                               )}
                               {cheapest && (
                                 <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded dark:bg-blue-900/30 dark:text-blue-300">
