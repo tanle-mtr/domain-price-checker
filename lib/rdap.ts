@@ -40,6 +40,17 @@ const RDAP_DIRECT: Record<string, string[]> = {
   tv: ["https://rdap.nic.tv/"],
   dev: ["https://pubapi.registry.google/rdap/"],
   app: ["https://pubapi.registry.google/rdap/"],
+  top: ["https://rdap.verisign.com/top/v1/"],
+  site: ["https://rdap.afilias.net/sit/"],
+  tech: ["https://rdap.publicinterestregistry.org/rdap/"],
+  cc: ["https://www.nic.cc/rdap/domain/"],
+  info: ["https://rdap.verisign.com/info/v1/"],
+  vip: ["https://rdap.verisign.com/vip/v1/"],
+  store: ["https://rdap.verisign.com/store/v1/"],
+  online: ["https://rdap.verisign.com/online/v1/"],
+  space: ["https://rdap.verisign.com/space/v1/"],
+  club: ["https://rdap.verisign.com/club/v1/"],
+  pro: ["https://rdap.verisign.com/pro/v1/"],
 };
 
 const WHOIS_SERVERS: Record<string, string> = {
@@ -54,6 +65,17 @@ const WHOIS_SERVERS: Record<string, string> = {
   tv: "whois.nic.tv",
   dev: "whois.nic.dev",
   app: "whois.nic.app",
+  top: "whois.verisign-grs.com",
+  site: "whois.afilias.net",
+  tech: "whois.pir.org",
+  cc: "whois.nic.cc",
+  info: "whois.verisign-grs.com",
+  vip: "whois.verisign-grs.com",
+  store: "whois.verisign-grs.com",
+  online: "whois.verisign-grs.com",
+  space: "whois.verisign-grs.com",
+  club: "whois.nic.club",
+  pro: "whois.nic.pro",
 };
 
 async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
