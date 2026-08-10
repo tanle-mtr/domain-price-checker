@@ -42,13 +42,14 @@ function safeDateCalc(expiryDate: string | null | undefined): { daysLeft: number
 export default function ResultSection({ results, currency, rate }: Props) {
   const [scrapedPrices, setScrapedPrices] = useState<Record<string, ScrapedPrice[]>>({});
   const [loadingPrices, setLoadingPrices] = useState<Set<string>>(new Set());
+  const [lastUpdated, setLastUpdated] = useState<Record<string, number>>({});
 
   // 获取实时价格 - 先 WHOIS 检查，再爬虫
   useEffect(() => {
     const fetchPrices = async () => {
       for (const r of results) {
         if (r.status !== 'available') continue;
-        if (scrapedPrices[r.full]) continue; // 已缓存
+        if (scrapedPrices[r.full]) continue;
         if (loadingPrices.has(r.full)) continue;
         
         setLoadingPrices(prev => new Set(prev).add(r.full));
@@ -71,6 +72,7 @@ export default function ResultSection({ results, currency, rate }: Props) {
                 success: p.success || false,
               })),
             }));
+            setLastUpdated(prev => ({ ...prev, [r.full]: Date.now() }));
           }
         } catch (e) {
           console.error(`Failed to scrape price for ${r.full}:`, e);
@@ -83,10 +85,44 @@ export default function ResultSection({ results, currency, rate }: Props) {
         }
       }
     };
-    if (results.length > 0) {
-      fetchPrices();
-    }
+    fetchPrices();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results]);
+
+  // 手动刷新价格
+  const handleRefresh = async (domain: string, tld: string) => {
+    setLoadingPrices(prev => new Set(prev).add(domain));
+    try {
+      const res = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: domain.split('.')[0], tld }),
+      });
+      const data = await res.json();
+      if (data.prices && data.status === 'available') {
+        setScrapedPrices(prev => ({
+          ...prev,
+          [domain]: data.prices.map((p: any) => ({
+            registrar: p.registrar,
+            firstYear: p.price,
+            renewal: p.price ? p.price * 1.2 : null,
+            currency: p.currency,
+            source: p.source || 'fallback',
+            success: p.success || false,
+          })),
+        }));
+        setLastUpdated(prev => ({ ...prev, [domain]: Date.now() }));
+      }
+    } catch (e) {
+      console.error(`Failed to refresh price for ${domain}:`, e);
+    } finally {
+      setLoadingPrices(prev => {
+        const next = new Set(prev);
+        next.delete(domain);
+        return next;
+      });
+    }
+  };
 
   // 获取注册商的实时价格
   const getScrapedPrice = (domain: string, registrar: string) => {
@@ -138,7 +174,15 @@ export default function ResultSection({ results, currency, rate }: Props) {
                   <p className="text-xs text-slate-500">
                     ⓘ 价格为参考价，实际价格以注册商结算页为准
                     {loadingPrices.has(r.full) && ' - 正在查询价格...'}
+                    {lastUpdated[r.full] && !loadingPrices.has(r.full) && ` - 更新于 ${new Date(lastUpdated[r.full]).toLocaleTimeString('zh-CN')}`}
                   </p>
+                  <button
+                    onClick={() => handleRefresh(r.full, r.tld)}
+                    disabled={loadingPrices.has(r.full)}
+                    className="text-xs text-blue-600 hover:underline dark:text-blue-400 disabled:opacity-50"
+                  >
+                    🔄 刷新
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
