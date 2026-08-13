@@ -3,14 +3,14 @@
   "next": 1000000,
   "total": 1000000,
   "completed": true,
-  "startedAt": 1786561787596,
-  "updatedAt": 1786565358632,
-  "completedAt": 1786565358632,
+  "startedAt": 1786588091599,
+  "updatedAt": 1786591985624,
+  "completedAt": 1786591985624,
   "counts": {
-    "available": 801887,
-    "registered": 198113,
+    "available": 801861,
+    "registered": 198139,
     "unknown": 0,
-    "expiring": 5,
+    "expiring": 1,
     "expired": 0,
     "confirmed": 0
   }
