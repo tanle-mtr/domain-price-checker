@@ -537,7 +537,10 @@ export default function CheapDomainsPage() {
   // 导出到期域名列表
   const exportExpiry = () => {
     if (expiryData.length === 0) return;
-    const blob = new Blob([expiryData.map(d => `${d.domain}\t${d.expiry}\t${d.daysLeft}天`).join('\n')], {
+    // 添加 UTF-8 BOM 确保 Windows 记事本正确显示
+    const BOM = '\uFEFF';
+    const content = expiryData.map(d => `${d.domain}\t${d.expiry}\t${d.daysLeft}天`).join('\n');
+    const blob = new Blob([BOM + content], {
       type: 'text/plain;charset=utf-8',
     });
     const url = URL.createObjectURL(blob);
