@@ -539,7 +539,12 @@ export default function CheapDomainsPage() {
     if (expiryData.length === 0) return;
     // 添加 UTF-8 BOM 确保 Windows 记事本正确显示
     const BOM = '\uFEFF';
-    const content = expiryData.map(d => `${d.domain}\t${d.expiry}\t${d.daysLeft}天`).join('\n');
+    // 清理域名格式，移除多余的 .xyz 后缀
+    const content = expiryData.map(d => {
+      // 移除多余的 .xyz 后缀，只保留一个
+      const cleanDomain = d.domain.replace(/\.xyz+$/, '.xyz');
+      return `${cleanDomain}\t${d.expiry}\t${d.daysLeft}天`;
+    }).join('\n');
     const blob = new Blob([BOM + content], {
       type: 'text/plain;charset=utf-8',
     });
