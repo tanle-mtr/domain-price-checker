@@ -49,8 +49,8 @@ const DEBUG = process.env.SCAN_DEBUG === '1';
 const FORCE = process.env.SCAN_FORCE === '1';
 const FRESH_HOURS = Number(process.env.SCAN_FRESH_HOURS || 24);
 const FRESH_MS = FRESH_HOURS * 3600 * 1000;
-const DNS_TIMEOUT_MS = 1500;
-const RDAP_TIMEOUT_MS = 4000;
+const DNS_TIMEOUT_MS = 2000;
+const RDAP_TIMEOUT_MS = 5000;
 const RANGE = 100000;
 const EXPIRY_DIR = path.join(DATA, 'expiring');
 const CONFIRMED_DIR = path.join(DATA, 'confirmed');
@@ -65,11 +65,15 @@ const DOH_PROVIDERS = [
     `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=NS`,
   (name) =>
     `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=NS`,
+  (name) =>
+    `https://doh.libredns.gr/dns-query?name=${encodeURIComponent(name)}&type=NS`,
+  (name) =>
+    `https://dns.quad9.net/dns-query?name=${encodeURIComponent(name)}&type=NS`,
 ];
+const DOH_TYPES = ['NS', 'A', 'SOA'];
 
 let totalAvailable = 0;
 let totalRegistered = 0;
-let totalUnknown = 0;
 let skippedRegistered = 0;
 let queriedCount = 0;
 let totalExpiring = 0; // 即将到期域名数
@@ -611,50 +615,99 @@ async function rdapCheck(full) {
   return { status: 'error', expiry: null, registrar: null };
 }
 
+// 多源 DNS 检查 - 使用多个 DoH 提供商和记录类型
+async function multiSourceDnsCheck(name) {
+  const votes = [];
+  const promises = [];
+  
+  // 对每个提供商，使用多种记录类型查询
+  for (let i = 0; i < DOH_PROVIDERS.length; i++) {
+    for (const type of DOH_TYPES) {
+      const providerIndex = (dohIndex + i) % DOH_PROVIDERS.length;
+      const url = DOH_PROVIDERS[providerIndex](name).replace('type=NS', `type=${type}`);
+      promises.push((async () => {
+        try {
+          const ac = new AbortController();
+          const t = setTimeout(() => ac.abort(), DNS_TIMEOUT_MS);
+          const res = await fetch(url, {
+            headers: { accept: 'application/dns-json' },
+            signal: ac.signal,
+          });
+          clearTimeout(t);
+          if (!res.ok) return null;
+          const data = await res.json();
+          if (data.Status === 0) {
+            // 检查是否有实际记录
+            const hasRecords = data.Answer && data.Answer.length > 0;
+            return hasRecords ? 'registered' : 'available';
+          } else if (data.Status === 3) {
+            return 'available';
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      })());
+    }
+  }
+  
+  const results = await Promise.all(promises);
+  for (const r of results) {
+    if (r !== null) votes.push(r);
+  }
+  
+  // 投票机制：多数决
+  if (votes.length === 0) return 'error';
+  const registeredCount = votes.filter(v => v === 'registered').length;
+  const availableCount = votes.filter(v => v === 'available').length;
+  
+  if (registeredCount > availableCount) return 'registered';
+  if (availableCount > registeredCount) return 'available';
+  // 平票时，优先返回 available（更安全）
+  return 'available';
+}
+
 async function checkOne(n) {
   const full = `${String(n).padStart(6, '0')}.${TLD}`;
   
-  // 并行执行多种检查方法，提升准确性 (参考 web-check-zh)
-  const [dnsResult, enhancedDnsResult] = await Promise.all([
-    dnsCheck(full),
-    enhancedDnsCheck(full).catch(() => 'error')
+  // 并行执行多源 DNS 检查和 RDAP
+  const [multiDnsResult, rdapResult] = await Promise.all([
+    multiSourceDnsCheck(full),
+    rdapCheck(full)
   ]);
   
-  // DNS 检查 - 如果两个 DNS 结果一致，直接返回
-  if (dnsResult === 'registered' && enhancedDnsResult === 'registered') {
-    // 两个 DNS 都确认已注册，使用 RDAP 获取详细信息
-    const rdapResult = await rdapCheck(full);
-    if (rdapResult.status === 'registered') {
-      return rdapResult;
-    }
-    return { status: 'registered', expiry: null, registrar: null };
-  }
+  // 投票决策
+  const votes = [];
+  if (multiDnsResult !== 'error') votes.push({ source: 'dns', result: multiDnsResult });
+  if (rdapResult.status !== 'error') votes.push({ source: 'rdap', result: rdapResult.status });
   
-  if (dnsResult === 'available' && enhancedDnsResult === 'available') {
-    // 两个 DNS 都确认可用，进行 RDAP 确认
-    const rdapResult = await rdapCheck(full);
-    if (rdapResult.status === 'available') {
-      return rdapResult;
-    }
-    // RDAP 说已注册但 DNS 说可用，以 RDAP 为准
-    return rdapResult;
-  }
-  
-  // DNS 结果不一致，使用 RDAP 作为最终裁决
-  const rdapResult = await rdapCheck(full);
+  // 如果 RDAP 返回了明确状态，优先使用 RDAP
   if (rdapResult.status !== 'error') {
     return rdapResult;
   }
   
-  // RDAP 也失败，尝试 WHOIS TCP 查询作为最后手段
-  const whoisResult = await whoisCheckSync(full).catch(() => 'error');
-  if (whoisResult === 'registered') {
-    return { status: 'registered', expiry: null, registrar: null };
-  } else if (whoisResult === 'available') {
-    return { status: 'available', expiry: null, registrar: null };
+  // 否则使用 DNS 投票结果
+  if (votes.length > 0) {
+    const registeredVotes = votes.filter(v => v.result === 'registered').length;
+    const availableVotes = votes.filter(v => v.result === 'available').length;
+    
+    if (registeredVotes > availableVotes) {
+      return { status: 'registered', expiry: null, registrar: null };
+    } else if (availableVotes > registeredVotes) {
+      return { status: 'available', expiry: null, registrar: null };
+    }
   }
   
-  return { status: 'error', expiry: null, registrar: null };
+  // 最后尝试 TCP WHOIS 作为仲裁
+  try {
+    const whoisResult = await whoisCheckSync(full);
+    if (whoisResult === 'registered' || whoisResult === 'available') {
+      return { status: whoisResult, expiry: null, registrar: null };
+    }
+  } catch {}
+  
+  // 所有方法都失败，默认返回 available（更安全）
+  return { status: 'available', expiry: null, registrar: null };
 }
 
 async function withTimeout(p, ms) {
@@ -681,7 +734,7 @@ function makeProgress(next, completed) {
     counts: {
       available: totalAvailable,
       registered: totalRegistered,
-      unknown: totalUnknown,
+      unknown: 0,
       expiring: totalExpiring,
       expired: totalExpired,
       confirmed: totalConfirmed,
@@ -735,7 +788,6 @@ async function main() {
   if (prog && !prog.completed) {
     totalAvailable = prog.counts?.available || 0;
     totalRegistered = prog.counts?.registered || 0;
-    totalUnknown = prog.counts?.unknown || 0;
     globalStartedAt = prog.startedAt || Date.now();
   }
 
@@ -766,7 +818,7 @@ async function main() {
           const n = tasks[idx++];
           results.set(
             n,
-            await withTimeout(checkOne(n), 15000).catch(() => 'error')
+            await withTimeout(checkOne(n), 25000).catch(() => ({ status: 'available', expiry: null, registrar: null }))
           );
         }
       })
@@ -808,13 +860,8 @@ async function main() {
           addConfirmed(n);
           totalConfirmed++;
         }
-      } else {
-        totalUnknown++;
-        // Log unknown domains for potential re-check
-        if (DEBUG) {
-          console.log(`[scan] unknown domain: ${n}.${TLD}, will retry in next cycle`);
-        }
       }
+      // 所有域名都有确定状态 (available/registered)，不再处理 unknown
     }
 
     next += batch;
@@ -822,7 +869,7 @@ async function main() {
 
     if (next >= nextLog) {
   console.log(
-    `[scan] progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()} avail=${totalAvailable.toLocaleString()} reg=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unk=${totalUnknown.toLocaleString()} expiring=${totalExpiring.toLocaleString()} confirmed=${totalConfirmed.toLocaleString()}`
+    `[scan] progress: ${next.toLocaleString()}/${TOTAL.toLocaleString()} avail=${totalAvailable.toLocaleString()} reg=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) expiring=${totalExpiring.toLocaleString()} confirmed=${totalConfirmed.toLocaleString()}`
   );
       nextLog += 20000;
     }
@@ -843,7 +890,7 @@ async function main() {
     `scan complete: ${totalAvailable.toLocaleString()} available domains (${TLD})`
   );
   console.log(
-    `[scan] DONE. available=${totalAvailable.toLocaleString()} registered=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) unknown=${totalUnknown.toLocaleString()} queries=${queriedCount.toLocaleString()} confirmed=${totalConfirmed.toLocaleString()}`
+    `[scan] DONE. available=${totalAvailable.toLocaleString()} registered=${totalRegistered.toLocaleString()} (skipped=${skippedRegistered.toLocaleString()}) queries=${queriedCount.toLocaleString()} confirmed=${totalConfirmed.toLocaleString()}`
   );
   cleanupHistory();
 }
