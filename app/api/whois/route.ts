@@ -4,6 +4,7 @@ import { domainToASCII } from "node:url";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+export const dynamic = "force-dynamic";
 
 /** WHOIS 服务器映射 (按 TLD) */
 const WHOIS_SERVERS: Record<string, string> = {

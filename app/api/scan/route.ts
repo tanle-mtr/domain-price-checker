@@ -3,6 +3,7 @@ import { fastScanAvailability } from "@/lib/fastscan";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 
 const MAX_COUNT = 1000;
 const MAX_CONCURRENCY = 100;
