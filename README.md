@@ -6,9 +6,8 @@
 - 实时爬取 Steam、Epic、GOG、Humble Bundle、Fanatical、Green Man Gaming 等平台的游戏 CDK 价格，对比最便宜的正版密钥
 - 通过 GitHub Actions 后台 Worker + DNS-over-HTTPS 全量扫描 100 万个 6 位数字 `.xyz` 域名，结果直接托管在仓库内，前端打开即用
 
-在线地址：<https://tanle-mtr.github.io/domain-price-checker/>
-
-> 自定义域名 `id.tanle.cc.cd` 配置中，DNS CNAME 记录：`id.tanle.cc.cd → tanle-mtr.github.io`
+在线地址：<https://id.tanle.cc.cd/>
+> 或备用地址：<https://domain-price-checker.vercel.app/>
 
 ## 功能
 
