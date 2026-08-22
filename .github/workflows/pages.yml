@@ -24,7 +24,23 @@ jobs:
           node-version: '20'
       - run: npm ci
       - run: npm run build
-      - run: ls -la out/
+      - name: Extract static pages
+        run: |
+          mkdir -p out
+          cp out/index.html out/404.html 2>/dev/null || true
+          for page in game-prices cheap whois id ip login callback docs admin console; do
+            src=".next/server/app/${page}/page"
+            if [ -f "${src}.js" ]; then
+              mkdir -p "out/${page}"
+              cp "${src}.html" "out/${page}/index.html" 2>/dev/null || true
+              cp "${src}.js" "out/${page}/page.js" 2>/dev/null || true
+            fi
+          done
+          # Copy _next/static assets
+          if [ -d ".next/static" ]; then
+            cp -r ".next/static" "out/_next/"
+          fi
+          ls -laR out/ | head -50
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./out
