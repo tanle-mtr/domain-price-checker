@@ -1,11 +1,14 @@
-# 域名价格查询 & 便宜域名扫描器
+# 域名价格查询 & 游戏密钥比价工具
 
-一个开源的域名比价工具，同时内置**百万级 `.xyz` 未注册域名扫描器**。
+一个开源的域名比价工具集，同时内置**百万级 `.xyz` 未注册域名扫描器**和**游戏 CDK 实时爬虫比价**。
 
 - 在多个注册商之间对比同一域名的首年 / 续费价格，并一键跳转到对应注册商查询
+- 实时爬取 Steam、Epic、GOG、Humble Bundle、Fanatical、Green Man Gaming 等平台的游戏 CDK 价格，对比最便宜的正版密钥
 - 通过 GitHub Actions 后台 Worker + DNS-over-HTTPS 全量扫描 100 万个 6 位数字 `.xyz` 域名，结果直接托管在仓库内，前端打开即用
 
-在线示例：<https://domain-price-checker.vercel.app>
+在线地址：<https://tanle-mtr.github.io/domain-price-checker/>
+
+> 自定义域名 `id.tanle.cc.cd` 配置中，DNS CNAME 记录：`id.tanle.cc.cd → tanle-mtr.github.io`
 
 ## 功能
 
@@ -36,6 +39,23 @@
 
 价格数据维护在 [`lib/pricing.ts`](lib/pricing.ts)（公开参考价快照，仅作参考，最终以注册商结算为准）。
 
+### 游戏密钥比价（`/game-prices`）
+
+实时爬虫抓取各大游戏平台当前价格：
+
+| 平台 | 数据来源 |
+|------|---------|
+| Steam | 官方 API |
+| Epic Games | GraphQL API |
+| Humble Bundle | 官方搜索 API |
+| GOG | 网页解析 |
+| Fanatical | 网页解析 |
+| Green Man Gaming | 网页解析 |
+
+支持输入游戏名称（中英文）搜索，按价格最低 / 折扣最大 / 最新发布排序，展开查看各平台完整价格对比。价格缓存在浏览器 30 分钟。
+
+> 注意：部分平台需要翻墙访问（GOG / Fanatical / GMGN 通过 CORS 代理抓取）。
+
 ### 便宜域名（`/cheap`，百万 .xyz 扫描）
 
 - **云端后台扫描**：GitHub Actions 定时（每 15 分钟）运行 [`worker/scan.mjs`](worker/scan.mjs)，把已备案域名记录为「已注册」，增量重扫时只检查未注册部分。扫描进度与结果写入 `data/`
@@ -53,6 +73,7 @@
 app/
   page.tsx              # 首页：域名价格对比
   cheap/                # 便宜域名（百万 .xyz 扫描）页面
+  game-prices/          # 游戏密钥比价页面
   api/check/            # RDAP+DNS 可用性检查 API
   api/scan/             # 服务端批量扫描 API
 components/
@@ -62,6 +83,7 @@ lib/
   pricing.ts            # 注册商价格快照与结算链接模板
   tlds.ts               # 后缀列表
   rdap.ts               # RDAP 可用性检查（含 IANA 直连端点）
+  game-scraper.ts       # 游戏平台价格爬虫（Steam/Epic/GOG/Humble/Fanatical/GMGN）
 worker/
   scan.mjs              # GitHub Actions 后台扫描 Worker（DoH 并发扫描 + 增量 + 历史清理）
 data/                   # 扫描产物（scan-progress.json + available/ 分片 txt）
