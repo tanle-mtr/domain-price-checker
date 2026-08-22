@@ -46,6 +46,12 @@ export default function RootLayout({
                 >
                   WHOIS查询
                 </Link>
+                <Link
+                  href="/game-prices"
+                  className="rounded-lg px-3 py-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-violet-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-violet-400"
+                >
+                  游戏比价
+                </Link>
               </div>
             </div>
             <ThemeToggle />
