@@ -4,6 +4,7 @@ import { domainToASCII } from "node:url";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+export const dynamic = "force-static";
 
 const NAME_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const TLD_RE = /^[a-z0-9-]{2,24}$/;

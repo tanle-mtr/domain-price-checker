@@ -3,6 +3,7 @@ import { scrapeDomainPrices, loadPriceCache } from "@/lib/price-scraper";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+export const dynamic = "force-static";
 
 /**
  * Price scraper API
