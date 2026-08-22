@@ -3,6 +3,8 @@ import { REGISTRARS } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+export const dynamic = "force-static";
+export const revalidate = 3600;
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
